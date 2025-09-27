@@ -263,7 +263,7 @@ async def analyze_food_image(self, image_bytes):
             return f"{config.EMOJIS['warning']} Не удалось распознать еду на изображении.\n\nПопробуйте сделать более четкое фото блюда."
         
         # Заголовок с индикатором кеша
-        cache_indicator = "📱" if result.get('from_cache') else "��"
+        cache_indicator = "📱" if result.get('from_cache') else "🤖"
         message = f"{cache_indicator} **Анализ блюда**\n\n"
         
         # Общие калории
