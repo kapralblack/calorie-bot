@@ -202,10 +202,14 @@ class CalorieBotHandlers:
             
             formatted_result += progress_message
             
+            # Сохраняем данные для коррекции
+            context.user_data['last_photo_id'] = photo.file_id
+            context.user_data['last_analysis_result'] = result
+            
             # Клавиатура с действиями
             keyboard = [
                 [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
-                [InlineKeyboardButton("🔧 Исправить количество", callback_data=f"correct_{photo.file_id}")],
+                [InlineKeyboardButton("🔧 Исправить количество", callback_data="correct_analysis")],
                 [InlineKeyboardButton(f"{config.EMOJIS['food']} Добавить еще блюдо", callback_data="add_more")],
             ]
             
@@ -354,7 +358,7 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
-        elif query.data.startswith("correct_"):
+        elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data.startswith("correction"):
             await CalorieBotHandlers.process_correction(update, context, query.message.text)
@@ -552,28 +556,36 @@ class CalorieBotHandlers:
 async def correction_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик коррекции анализа"""
     query = update.callback_query
-    photo_id = query.data.split("_")[1]
     
-    # Сохраняем ID фото для коррекции
-    context.user_data['correction_photo_id'] = photo_id
+    # Проверяем есть ли данные для коррекции
+    if 'last_analysis_result' not in context.user_data:
+        await query.edit_message_text("❌ Нет данных для коррекции. Пошлите новое фото.")
+        return
+    
     context.user_data['waiting_for'] = 'correction'
+    
+    # Показываем текущий анализ для удобства
+    result = context.user_data['last_analysis_result']
+    current_items = "\n".join([
+        f"• {item['name']}: {item['portion_size']}"
+        for item in result.get('food_items', [])
+    ])
     
     message = f"""
 🔧 **Коррекция анализа**
 
-Что нужно исправить? Напишите в формате:
+**Текущий анализ:**
+{current_items}
+**Общие калории:** {result.get('total_calories', 0)} ккал
 
-**Для изменения калорий:**
-`калории 850` (новое общее количество)
-
-**Для изменения конкретного блюда:**
-`бутерброды 4 штуки` (название блюда и новое количество)
+**Как исправить:**
+• `calories 850` - изменить общие калории
+• `бутерброды 4 штуки` - исправить количество блюда
 
 **Примеры:**
-• `калории 900`
-• `бутерброды 4 штуки` 
+• `calories 900`
+• `бутерброды 4 штуки`
 • `блины 2 штуки`
-• `рыба 1 кусок`
 
 Напишите ваше исправление:
 """

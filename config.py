@@ -34,35 +34,36 @@ AI_MODEL = "gpt-4o"
 MAX_TOKENS = 1000
 
 # Настройки анализа калорий
+# AI Configuration - English prompts for better understanding
 CALORIE_PROMPT = """
-Внимательно проанализируй это изображение еды и предоставь максимально точную информацию о калориях.
+Carefully analyze this food image and provide accurate calorie information.
 
-ВАЖНЫЕ ПРАВИЛА:
-1. ТОЧНО подсчитай количество каждого предмета - считай только то, что ЧЕТКО видно
-2. НЕ додумывай и НЕ предполагай наличие скрытых предметов  
-3. Если сомневаешься в количестве - укажи это в portion_size
-4. Оценивай размер порций реалистично (стандартные размеры)
-5. Учитывай толщину, плотность и ингредиенты блюд
+CRITICAL RULES:
+1. COUNT EXACTLY what you see - only clearly visible items
+2. DO NOT guess or assume hidden food items
+3. If uncertain about quantity, mention it in portion_size
+4. Use realistic portion sizes (standard serving sizes)
+5. Consider thickness, density, and ingredients of dishes
 
-ФОРМАТ ОТВЕТА - строго JSON:
+RESPONSE FORMAT - strict JSON:
 {
     "food_items": [
         {
-            "name": "точное название блюда/продукта",
-            "portion_size": "конкретное количество с единицами (например: 4 штуки, 1 средняя тарелка, 200мл)",
-            "calories": количество_калорий_число,
-            "proteins": граммы_белка_число,
-            "carbs": граммы_углеводов_число,
-            "fats": граммы_жиров_число,
-            "certainty": "высокая/средняя/низкая - насколько уверен в этом предмете"
+            "name": "exact food item name",
+            "portion_size": "specific amount with units (e.g., 4 pieces, 1 medium plate, 200ml)",
+            "calories": calorie_number,
+            "proteins": protein_grams_number,
+            "carbs": carbs_grams_number,
+            "fats": fat_grams_number,
+            "certainty": "high/medium/low - how confident you are about this item"
         }
     ],
-    "total_calories": общее_количество_калорий_число,
-    "confidence": число_от_0_до_100,
-    "analysis_notes": "краткие заметки о том, что было сложно определить или вызвало сомнения"
+    "total_calories": total_calorie_number,
+    "confidence": number_from_0_to_100,
+    "analysis_notes": "brief notes about what was difficult to determine or caused uncertainty"
 }
 
-Если на изображении нет еды, верни confidence: 0 и объясни что видишь в analysis_notes.
+If no food is visible, return confidence: 0 and explain what you see in analysis_notes.
 """
 
 # Эмодзи для интерфейса
