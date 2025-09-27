@@ -187,6 +187,7 @@ class CalorieBotHandlers:
             formatted_result = analyzer.format_analysis_result(result)
             
             # Добавляем информацию о дневном прогрессе
+            # ИСПРАВЛЕНИЕ: получаем калории ПОСЛЕ сохранения в БД
             today_calories = DatabaseManager.get_today_calories(db_user.id)
             daily_goal = db_user.daily_calorie_goal
             remaining = daily_goal - today_calories

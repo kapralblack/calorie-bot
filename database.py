@@ -119,6 +119,22 @@ class DatabaseManager:
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+            else:
+                # Обновляем данные существующего пользователя
+                updated = False
+                if username and user.username != username:
+                    user.username = username
+                    updated = True
+                if first_name and user.first_name != first_name:
+                    user.first_name = first_name
+                    updated = True
+                if last_name and user.last_name != last_name:
+                    user.last_name = last_name
+                    updated = True
+                
+                if updated:
+                    db.commit()
+                    db.refresh(user)
                 
             return user
         finally:
@@ -217,16 +233,23 @@ class DatabaseManager:
     
     @staticmethod
     def get_today_calories(user_id):
-        """Получить калории за сегодня"""
+        """Получить калории за сегодня - с прямым подсчетом из записей еды"""
         db = get_db()
         try:
+            from datetime import datetime
             today = datetime.now().date()
-            daily_stat = db.query(DailyStats).filter(
-                DailyStats.user_id == user_id,
-                DailyStats.date == today
-            ).first()
             
-            return daily_stat.total_calories if daily_stat else 0
+            # Получаем все записи еды за сегодня напрямую
+            entries = db.query(FoodEntry).filter(
+                FoodEntry.user_id == user_id,
+                FoodEntry.created_at >= datetime.combine(today, datetime.min.time().replace(tzinfo=datetime.now().tzinfo) if datetime.now().tzinfo else datetime.min.time()),
+                FoodEntry.created_at < datetime.combine(today, datetime.max.time().replace(tzinfo=datetime.now().tzinfo) if datetime.now().tzinfo else datetime.max.time())
+            ).all()
+            
+            # Считаем общие калории
+            total_calories = sum(entry.total_calories for entry in entries)
+            
+            return total_calories
         finally:
             db.close()
     
