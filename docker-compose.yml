@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  calorie-bot:
+    build: .
+    container_name: calorie-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=postgresql://bot_user:bot_password@postgres:5432/calorie_bot
+      - BOT_NAME=Калории Бот 🍎
+      - PORT=8000
+      - HOST=0.0.0.0
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - bot-network
+    ports:
+      - "8000:8000"
+    command: python bot.py
+
+  # Вариант с webhook для продакшена
+  calorie-bot-webhook:
+    build: .
+    container_name: calorie-bot-webhook
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=postgresql://bot_user:bot_password@postgres:5432/calorie_bot
+      - BOT_NAME=Калории Бот 🍎
+      - PORT=8000
+      - HOST=0.0.0.0
+      - WEBHOOK_URL=${WEBHOOK_URL}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - bot-network
+    ports:
+      - "8000:8000"
+    command: python webhook_server.py
+    profiles:
+      - webhook
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres-calorie-bot
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=calorie_bot
+      - POSTGRES_USER=bot_user
+      - POSTGRES_PASSWORD=bot_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - bot-network
+    ports:
+      - "5432:5432"
+    profiles:
+      - with-db
+
+  # Redis для кеширования (опционально)
+  redis:
+    image: redis:7-alpine
+    container_name: redis-calorie-bot
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - bot-network
+    ports:
+      - "6379:6379"
+    profiles:
+      - with-cache
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  bot-network:
+    driver: bridge
