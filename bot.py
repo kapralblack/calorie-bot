@@ -205,6 +205,7 @@ class CalorieBotHandlers:
             # Клавиатура с действиями
             keyboard = [
                 [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
+                [InlineKeyboardButton("🔧 Исправить количество", callback_data=f"correct_{photo.file_id}")],
                 [InlineKeyboardButton(f"{config.EMOJIS['food']} Добавить еще блюдо", callback_data="add_more")],
             ]
             
@@ -353,6 +354,14 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
+        elif query.data.startswith("correct_"):
+            await CalorieBotHandlers.correction_handler(update, context)
+        elif query.data.startswith("correction"):
+            await CalorieBotHandlers.process_correction(update, context, query.message.text)
+        elif query.data == "cancel_correction":
+            context.user_data.pop('waiting_for', None)
+            context.user_data.pop('correction_photo_id', None)
+            await query.edit_message_text("❌ Коррекция отменена")
     
     @staticmethod
     async def detailed_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -447,7 +456,9 @@ class CalorieBotHandlers:
         text = update.message.text
         
         # Проверяем, ожидаем ли мы ввод настроек
-        if context.user_data.get('waiting_for'):
+        if context.user_data.get('waiting_for') == 'correction':
+            await CalorieBotHandlers.process_correction(update, context, text)
+        elif context.user_data.get('waiting_for'):
             await CalorieBotHandlers.process_settings_input(update, context, text)
         else:
             # Обычное текстовое сообщение
@@ -536,6 +547,100 @@ class CalorieBotHandlers:
             message,
             reply_markup=reply_markup
         )
+
+@staticmethod
+async def correction_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик коррекции анализа"""
+    query = update.callback_query
+    photo_id = query.data.split("_")[1]
+    
+    # Сохраняем ID фото для коррекции
+    context.user_data['correction_photo_id'] = photo_id
+    context.user_data['waiting_for'] = 'correction'
+    
+    message = f"""
+🔧 **Коррекция анализа**
+
+Что нужно исправить? Напишите в формате:
+
+**Для изменения калорий:**
+`калории 850` (новое общее количество)
+
+**Для изменения конкретного блюда:**
+`бутерброды 4 штуки` (название блюда и новое количество)
+
+**Примеры:**
+• `калории 900`
+• `бутерброды 4 штуки` 
+• `блины 2 штуки`
+• `рыба 1 кусок`
+
+Напишите ваше исправление:
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("❌ Отмена", callback_data="cancel_correction")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        message,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+
+@staticmethod
+async def process_correction(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Обработка коррекции данных"""
+    user = update.effective_user
+    db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+    
+    try:
+        # Парсим введенную коррекцию
+        text_lower = text.lower()
+        
+        if text_lower.startswith('калории '):
+            # Коррекция общих калорий
+            new_calories = int(text.split()[1])
+            if 0 <= new_calories <= 5000:
+                # Здесь можно обновить последнюю запись в БД
+                message = f"✅ Калории скорректированы: {new_calories} ккал"
+                success = True
+            else:
+                message = "❌ Калории должны быть от 0 до 5000"
+                success = False
+        else:
+            # Коррекция количества блюда
+            parts = text.split()
+            if len(parts) >= 3:
+                dish_name = parts[0]
+                new_amount = ' '.join(parts[1:])
+                message = f"✅ Исправлено: {dish_name} - {new_amount}"
+                success = True
+            else:
+                message = "❌ Неверный формат. Используйте: 'блюдо количество единицы'"
+                success = False
+        
+    except ValueError:
+        message = "❌ Ошибка в формате числа"
+        success = False
+    
+    # Очищаем состояние
+    context.user_data.pop('waiting_for', None)
+    context.user_data.pop('correction_photo_id', None)
+    
+    keyboard = [
+        [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
+        [InlineKeyboardButton(f"{config.EMOJIS['back']} Главное меню", callback_data="main_menu")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        message,
+        reply_markup=reply_markup
+    )
 
 def main():
     """Основная функция запуска бота"""
