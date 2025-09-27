@@ -63,11 +63,20 @@ class CalorieBotHandlers:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            welcome_message,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
+        if update.callback_query:
+    # Это нажатие кнопки
+    await update.callback_query.edit_message_text(
+        welcome_message,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+else:
+    # Это команда /start
+    await update.message.reply_text(
+        welcome_message,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
