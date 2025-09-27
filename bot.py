@@ -79,6 +79,24 @@ class CalorieBotHandlers:
                 reply_markup=reply_markup
             )
     
+    @staticmethod 
+    async def fix_goal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для принудительного обновления цели калорий"""
+        user = update.effective_user
+        
+        # Принудительно устанавливаем цель 3000 ккал
+        success = DatabaseManager.force_update_user_goal(user.id, 3000)
+        
+        if success:
+            message = f"✅ **Цель обновлена!**\n\nВаша новая цель: **3000 ккал в день**\n\nТеперь статистика будет отображаться правильно!"
+        else:
+            message = "❌ Ошибка при обновлении цели. Попробуйте еще раз."
+        
+        await update.message.reply_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
@@ -669,6 +687,7 @@ def main():
     application.add_handler(CommandHandler("help", CalorieBotHandlers.help_command))
     application.add_handler(CommandHandler("stats", CalorieBotHandlers.stats_handler))
     application.add_handler(CommandHandler("settings", CalorieBotHandlers.settings_handler))
+    application.add_handler(CommandHandler("fixgoal", CalorieBotHandlers.fix_goal_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))

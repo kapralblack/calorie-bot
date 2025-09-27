@@ -104,7 +104,7 @@ class DatabaseManager:
     
     @staticmethod
     def get_or_create_user(telegram_id, username=None, first_name=None, last_name=None):
-        """Получить или создать пользователя"""
+        """Получить или создать пользователя с полной загрузкой настроек"""
         db = get_db()
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
@@ -114,11 +114,17 @@ class DatabaseManager:
                     telegram_id=telegram_id,
                     username=username,
                     first_name=first_name,
-                    last_name=last_name
+                    last_name=last_name,
+                    daily_calorie_goal=2000  # Дефолтная цель для новых пользователей
                 )
                 db.add(user)
                 db.commit()
                 db.refresh(user)
+                
+                # Логируем создание нового пользователя
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Создан новый пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
             else:
                 # Обновляем данные существующего пользователя
                 updated = False
@@ -135,6 +141,11 @@ class DatabaseManager:
                 if updated:
                     db.commit()
                     db.refresh(user)
+                
+                # Логируем загрузку существующего пользователя
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Загружен пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
                 
             return user
         finally:
@@ -261,6 +272,8 @@ class DatabaseManager:
         try:
             user = db.query(User).filter(User.id == user_id).first()
             if user:
+                old_goal = user.daily_calorie_goal
+                
                 if daily_calorie_goal is not None:
                     user.daily_calorie_goal = daily_calorie_goal
                 if weight is not None:
@@ -276,6 +289,59 @@ class DatabaseManager:
                 
                 db.commit()
                 db.refresh(user)
+                
+                # Логируем изменения
+                if daily_calorie_goal is not None:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Цель пользователя {user.telegram_id} изменена: {old_goal} → {user.daily_calorie_goal} ккал")
+                
                 return user
         finally:
             db.close()
+
+    @staticmethod  
+    def get_user_info(telegram_id):
+        """Получить подробную информацию о пользователе"""
+        db = get_db()
+        try:
+            user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            if not user:
+                return None
+            
+            # Получаем сегодняшние калории
+            today_calories = DatabaseManager.get_today_calories(user.id)
+            
+            # Получаем недавнюю статистику
+            recent_stats = DatabaseManager.get_user_stats(user.id, days=7)
+            
+            return {
+                'user': user,
+                'today_calories': today_calories,
+                'daily_goal': user.daily_calorie_goal,
+                'remaining_calories': user.daily_calorie_goal - today_calories,
+                'recent_stats': recent_stats,
+                'total_entries_last_week': len(recent_stats) if recent_stats else 0
+            }
+        finally:
+            db.close()
+
+    @staticmethod
+    def force_update_user_goal(telegram_id, new_goal):
+        """Принудительно обновить цель пользователя по telegram_id"""
+        db = get_db()
+        try:
+            user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            if user:
+                old_goal = user.daily_calorie_goal
+                user.daily_calorie_goal = new_goal
+                db.commit()
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"ПРИНУДИТЕЛЬНО изменена цель пользователя {telegram_id}: {old_goal} → {new_goal} ккал")
+                
+                return True
+        finally:
+            db.close()
+        return False

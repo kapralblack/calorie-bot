@@ -18,39 +18,86 @@ logger = logging.getLogger(__name__)
 # Настройка OpenAI
 openai.api_key = config.OPENAI_API_KEY
 
-# Словарь переводов
+# Расширенный словарь переводов еды
 FOOD_TRANSLATIONS = {
+    # Бутерброды и сэндвичи
+    'ham and cheese sandwiches': 'бутерброды с ветчиной и сыром',
+    'ham and cheese sandwich': 'бутерброд с ветчиной и сыром', 
     'slices of ham with cheese strips': 'бутерброды с колбасой и сыром',
     'ham with cheese strips': 'бутерброды с колбасой и сыром',
+    'sandwiches with ham and cheese': 'бутерброды с ветчиной и сыром',
+    'cheese and ham sandwiches': 'бутерброды с сыром и ветчиной',
+    'sandwiches': 'бутерброды',
+    'sandwich pieces': 'кусочки бутербродов',
+    'ham sandwich': 'бутерброд с ветчиной',
+    'cheese sandwich': 'бутерброд с сыром',
+    
+    # Блины и оладьи
+    'meat-filled pancakes': 'блины с мясом',
+    'pancakes with meat': 'блины с мясом',
+    'crepes with meat': 'блины с мясом', 
     'crepes': 'блины',
     'pancakes': 'блины',
-    'salmon slices': 'кусочки рыбы',
+    'meat pancakes': 'блины с мясом',
+    'stuffed pancakes': 'блины с начинкой',
+    
+    # Рыба
+    'sliced salmon': 'кусочки лосося',
+    'salmon slices': 'кусочки лосося',
     'fish slices': 'кусочки рыбы',
+    'sliced fish': 'кусочки рыбы',
     'salmon': 'лосось',
+    'lightly salted fish': 'рыба слабой соли',
+    'salted fish': 'соленая рыба',
+    'smoked salmon': 'копченый лосось',
+    
+    # Напитки
     'cup of tea': 'чашка чая',
+    'tea cup': 'чашка чая',
     'tea': 'чай',
-    'sandwiches': 'бутерброды',
+    'black tea': 'черный чай',
+    'green tea': 'зеленый чай',
+    'herbal tea': 'травяной чай',
+    'coffee': 'кофе',
+    'cup of coffee': 'чашка кофе',
+    
+    # Общие продукты
     'bread': 'хлеб',
     'cheese': 'сыр',
     'meat': 'мясо',
-    'ham': 'ветчина'
+    'ham': 'ветчина',
+    'sausage': 'колбаса',
+    'bacon': 'бекон'
 }
 
 def translate_food_name(english_name):
-    """Переводим английские названия еды на русский"""
-    english_lower = english_name.lower()
+    """Переводим английские названия еды на русский с учетом контекста"""
+    if not english_name:
+        return 'Неизвестное блюдо'
     
-    # Точное совпадение
+    english_lower = english_name.lower().strip()
+    
+    # Точное совпадение (приоритет)
     if english_lower in FOOD_TRANSLATIONS:
         return FOOD_TRANSLATIONS[english_lower]
     
-    # Частичное совпадение
-    for eng_key, rus_value in FOOD_TRANSLATIONS.items():
-        if eng_key in english_lower:
-            return rus_value
+    # Частичное совпадение для сложных названий
+    best_match = None
+    best_match_length = 0
     
-    # Если перевод не найден, возвращаем исходное название
+    for eng_key, rus_value in FOOD_TRANSLATIONS.items():
+        # Ищем наиболее полное совпадение
+        if eng_key in english_lower:
+            if len(eng_key) > best_match_length:
+                best_match = rus_value
+                best_match_length = len(eng_key)
+    
+    if best_match:
+        return best_match
+    
+    # Если точного перевода нет, возвращаем исходное название
     return english_name
+
 
 class CalorieAnalyzer:
     """Класс для анализа калорий на фотографиях еды"""
