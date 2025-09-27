@@ -30,7 +30,7 @@ HOST = os.getenv('HOST', '0.0.0.0')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL', '')
 
 # AI Configuration
-AI_MODEL = "gpt-4-vision-preview"
+AI_MODEL = "gpt-4o"
 MAX_TOKENS = 1000
 
 # Настройки анализа калорий
