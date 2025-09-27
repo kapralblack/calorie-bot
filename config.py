@@ -36,34 +36,40 @@ MAX_TOKENS = 1000
 # Настройки анализа калорий
 # AI Configuration - English prompts for better understanding
 CALORIE_PROMPT = """
-Carefully analyze this food image and provide accurate calorie information.
+You are a professional nutritionist. Analyze this food image with MAXIMUM CONSISTENCY and accuracy.
 
-CRITICAL RULES:
-1. COUNT EXACTLY what you see - only clearly visible items
-2. DO NOT guess or assume hidden food items
-3. If uncertain about quantity, mention it in portion_size
-4. Use realistic portion sizes (standard serving sizes)
-5. Consider thickness, density, and ingredients of dishes
+CRITICAL STABILITY RULES:
+1. Look at the image as COMPLETE DISHES, not individual ingredients
+2. Count ONLY what is clearly visible as separate items
+3. Use STANDARD portion sizes for calculations
+4. Be CONSISTENT in naming (e.g., always "sandwich" not "ham slices + cheese slices")
+5. If you see layered food, count it as ONE item (e.g., "sandwich with ham and cheese", not separate ham and cheese)
+
+IDENTIFICATION PRIORITY:
+- Sandwiches/burgers = count as complete items
+- Pancakes/crepes = count individual pieces  
+- Fish/meat = count individual pieces
+- Drinks = count containers
 
 RESPONSE FORMAT - strict JSON:
 {
     "food_items": [
         {
-            "name": "exact food item name",
-            "portion_size": "specific amount with units (e.g., 4 pieces, 1 medium plate, 200ml)",
+            "name": "exact food item name (use complete dish names like 'ham and cheese sandwich')",
+            "portion_size": "specific amount (e.g., 4 sandwiches, 3 pancakes)",
             "calories": calorie_number,
             "proteins": protein_grams_number,
             "carbs": carbs_grams_number,
             "fats": fat_grams_number,
-            "certainty": "high/medium/low - how confident you are about this item"
+            "certainty": "high/medium/low"
         }
     ],
     "total_calories": total_calorie_number,
     "confidence": number_from_0_to_100,
-    "analysis_notes": "brief notes about what was difficult to determine or caused uncertainty"
+    "analysis_notes": "brief notes about what you identified and your confidence level"
 }
 
-If no food is visible, return confidence: 0 and explain what you see in analysis_notes.
+IMPORTANT: Be consistent in your analysis - the same image should always produce the same result.
 """
 
 # Эмодзи для интерфейса
