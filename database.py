@@ -270,6 +270,22 @@ class DatabaseManager:
                         self.age = None
                         self.gender = None
                         self.activity_level = 'moderate'
+                    
+                    def calculate_daily_calorie_goal(self):
+                        """Рассчитывает дневную норму калорий"""
+                        if not all([self.weight, self.height, self.age, self.gender]):
+                            return 2000
+                        
+                        # Базальный метаболизм
+                        if self.gender.lower() == 'male':
+                            bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) + 5
+                        else:
+                            bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) - 161
+                        
+                        # Коэффициент активности
+                        activity_multipliers = {'low': 1.2, 'moderate': 1.55, 'high': 1.9}
+                        multiplier = activity_multipliers.get(self.activity_level, 1.55)
+                        return int(bmr * multiplier)
                         
                 return TempUser()
             
@@ -287,6 +303,22 @@ class DatabaseManager:
                     self.age = None
                     self.gender = None
                     self.activity_level = 'moderate'
+                
+                def calculate_daily_calorie_goal(self):
+                    """Рассчитывает дневную норму калорий"""
+                    if not all([self.weight, self.height, self.age, self.gender]):
+                        return 2000
+                    
+                    # Базальный метаболизм
+                    if self.gender.lower() == 'male':
+                        bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) + 5
+                    else:
+                        bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) - 161
+                    
+                    # Коэффициент активности
+                    activity_multipliers = {'low': 1.2, 'moderate': 1.55, 'high': 1.9}
+                    multiplier = activity_multipliers.get(self.activity_level, 1.55)
+                    return int(bmr * multiplier)
             
             return TempUser()
         finally:
@@ -772,30 +804,59 @@ class DatabaseManager:
     @staticmethod
     def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str):
         """Завершить онбординг пользователя и рассчитать персональную норму калорий"""
+        import logging
+        logger = logging.getLogger(__name__)
         db = SessionLocal()
+        
         try:
+            logger.info(f"Начинаем онбординг для пользователя {telegram_id}")
+            logger.info(f"Данные: вес={weight}, рост={height}, возраст={age}, пол={gender}, активность={activity_level}")
+            
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             if not user:
+                logger.error(f"Пользователь {telegram_id} не найден в базе данных")
+                return False
+            
+            # Проверяем, является ли это настоящим пользователем из БД
+            if not hasattr(user, 'id') or user.id is None:
+                logger.error(f"Пользователь {telegram_id} является временным, не может быть сохранен")
                 return False
             
             # Обновляем данные пользователя
-            user.weight = weight
-            user.height = height
-            user.age = age
-            user.gender = gender.lower()
-            user.activity_level = activity_level
+            logger.info(f"Обновляем данные пользователя {telegram_id}")
+            user.weight = float(weight)
+            user.height = float(height) 
+            user.age = int(age)
+            user.gender = str(gender).lower()
+            user.activity_level = str(activity_level)
+            
+            logger.info(f"Данные установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
             
             # Примечание: onboarding_completed временно отключено для совместимости
             # Завершенность онбординга определяется наличием основных данных
             
             # Рассчитываем персональную норму калорий
-            user.daily_calorie_goal = user.calculate_daily_calorie_goal()
+            try:
+                logger.info(f"Начинаем расчет дневной нормы калорий для пользователя {telegram_id}")
+                calculated_goal = user.calculate_daily_calorie_goal()
+                logger.info(f"Рассчитанная норма калорий: {calculated_goal}")
+                user.daily_calorie_goal = calculated_goal
+            except Exception as calc_error:
+                logger.error(f"Ошибка при расчете калорий: {calc_error}")
+                # Устанавливаем значение по умолчанию
+                user.daily_calorie_goal = 2000
+                logger.info(f"Установлена норма калорий по умолчанию: {user.daily_calorie_goal}")
             
+            logger.info(f"Сохраняем изменения в базу данных для пользователя {telegram_id}")
             db.commit()
-            logger.info(f"Онбординг завершен для пользователя {telegram_id}. Цель калорий: {user.daily_calorie_goal}")
+            logger.info(f"✅ Онбординг завершен для пользователя {telegram_id}. Цель калорий: {user.daily_calorie_goal}")
             return user.daily_calorie_goal
+            
         except Exception as e:
-            logger.error(f"Ошибка при завершении онбординга: {e}")
+            logger.error(f"Критическая ошибка при завершении онбординга для {telegram_id}: {e}")
+            logger.error(f"Тип ошибки: {type(e).__name__}")
+            import traceback
+            logger.error(f"Полный traceback: {traceback.format_exc()}")
             db.rollback()
             return False
         finally:
