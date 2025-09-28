@@ -133,6 +133,91 @@ class CalorieBotHandlers:
             await update.message.reply_text(f"❌ Ошибка OpenAI API: {str(e)}")
             import traceback
             logger.error(f"Ошибка тестирования OpenAI: {traceback.format_exc()}")
+
+    @staticmethod
+    async def debug_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /debuguser - диагностика пользовательских данных"""
+        user = update.effective_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Получаем статистику
+            tracking_days = DatabaseManager.get_tracking_days(db_user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            
+            message = f"""
+🔍 **Диагностика пользователя**
+
+👤 **Основные данные:**
+• Telegram ID: `{user.id}`
+• ID в БД: `{db_user.id}`
+• Имя: {user.first_name or 'Не указано'}
+
+⚙️ **Настройки профиля:**
+• Цель калорий: {db_user.daily_calorie_goal} ккал/день
+• Вес: {db_user.weight or 'Не указан'} {' кг' if db_user.weight else ''}
+• Рост: {db_user.height or 'Не указан'} {' см' if db_user.height else ''}
+• Возраст: {db_user.age or 'Не указан'} {' лет' if db_user.age else ''}
+• Пол: {('мужской' if db_user.gender == 'male' else 'женский') if db_user.gender else 'Не указан'}
+
+📊 **Статистика:**
+• Дней с записями: {tracking_days}
+• Калорий сегодня: {today_calories:.1f}
+• Создан: {db_user.created_at.strftime('%d.%m.%Y %H:%M') if db_user.created_at else 'Неизвестно'}
+
+🔧 **For fixing data use:**
+/fixgoal - Установить цель 3000 ккал
+⚙️ Настройки - Изменить физические параметры
+"""
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка диагностики: {e}")
+
+    @staticmethod 
+    async def reset_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /resetuser - полный сброс данных пользователя для тестирования"""
+        user = update.effective_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Сбрасываем все настройки на дефолтные
+            updated_user = DatabaseManager.update_user_settings(
+                db_user.id,
+                daily_calorie_goal=2000,
+                weight=None,
+                height=None,
+                age=None,
+                gender=None
+            )
+            
+            logger.info(f"🔄 Пользователь {user.id} сброшен к дефолтным настройкам")
+            
+            await update.message.reply_text(
+                f"""
+🔄 **Данные сброшены**
+
+Ваши настройки возвращены к исходным:
+• Цель калорий: 2000 ккал/день  
+• Физические параметры: сброшены
+
+Теперь можете заново настроить профиль через:
+⚙️ /settings - настройки
+🎯 /fixgoal - установить цель 3000 ккал
+""", 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка сброса: {e}")
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -375,6 +460,14 @@ class CalorieBotHandlers:
         user = update.effective_user if update.message else update.callback_query.from_user
         db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
         
+        # ЛОГИРОВАНИЕ: Текущие настройки пользователя
+        logger.info(f"⚙️ Загрузка настроек пользователя {user.id} ({db_user.telegram_id}):")
+        logger.info(f"   Цель калорий: {db_user.daily_calorie_goal}")
+        logger.info(f"   Вес: {db_user.weight}")
+        logger.info(f"   Рост: {db_user.height}")
+        logger.info(f"   Возраст: {db_user.age}")
+        logger.info(f"   Пол: {db_user.gender}")
+        
         message = f"{config.EMOJIS['settings']} **Настройки профиля**\n\n"
         message += f"**Текущие настройки:**\n"
         message += f"🎯 Цель калорий в день: {db_user.daily_calorie_goal} ккал\n"
@@ -577,18 +670,23 @@ class CalorieBotHandlers:
             if waiting_for == 'calorie_goal':
                 calorie_goal = int(text)
                 if 500 <= calorie_goal <= 5000:
-                    DatabaseManager.update_user_settings(db_user.id, daily_calorie_goal=calorie_goal)
+                    # ЛОГИРОВАНИЕ: Сохранение цели калорий
+                    logger.info(f"👤 Пользователь {user.id} ({db_user.telegram_id}) меняет цель калорий: {db_user.daily_calorie_goal} → {calorie_goal}")
+                    updated_user = DatabaseManager.update_user_settings(db_user.id, daily_calorie_goal=calorie_goal)
                     success = True
                     message = f"✅ Цель калорий установлена: {calorie_goal} ккал в день"
+                    logger.info(f"✅ Цель обновлена в БД: {updated_user.daily_calorie_goal}")
                 else:
                     error_message = "Цель калорий должна быть между 500 и 5000 ккал"
             
             elif waiting_for == 'weight':
                 weight = float(text.replace(',', '.'))
                 if 20 <= weight <= 300:
-                    DatabaseManager.update_user_settings(db_user.id, weight=weight)
+                    logger.info(f"👤 Пользователь {user.id} ({db_user.telegram_id}) устанавливает вес: {weight} кг")
+                    updated_user = DatabaseManager.update_user_settings(db_user.id, weight=weight)
                     success = True
                     message = f"✅ Вес обновлен: {weight} кг"
+                    logger.info(f"✅ Вес сохранен в БД: {updated_user.weight}")
                 else:
                     error_message = "Вес должен быть между 20 и 300 кг"
             
@@ -1067,6 +1165,8 @@ def main():
     application.add_handler(CommandHandler("profile", CalorieBotHandlers.profile_command))
     application.add_handler(CommandHandler("fixgoal", CalorieBotHandlers.fix_goal_command))
     application.add_handler(CommandHandler("testai", CalorieBotHandlers.test_ai_command))
+    application.add_handler(CommandHandler("debuguser", CalorieBotHandlers.debug_user_command))
+    application.add_handler(CommandHandler("resetuser", CalorieBotHandlers.reset_user_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))
