@@ -218,6 +218,134 @@ class CalorieBotHandlers:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Ошибка сброса: {e}")
+
+    @staticmethod 
+    async def debug_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /debugstats - проверка состояния таблиц DailyStats и FoodEntry"""
+        user = update.effective_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Проверяем FoodEntry
+            from database import SessionLocal, FoodEntry, DailyStats
+            from sqlalchemy import func
+            
+            db = SessionLocal()
+            try:
+                # Считаем записи в FoodEntry
+                food_entries_count = db.query(func.count(FoodEntry.id)).filter(
+                    FoodEntry.user_id == db_user.id
+                ).scalar()
+                
+                # Считаем записи в DailyStats
+                daily_stats_count = db.query(func.count(DailyStats.id)).filter(
+                    DailyStats.user_id == db_user.id
+                ).scalar()
+                
+                # Последние 3 записи FoodEntry
+                recent_food_entries = db.query(FoodEntry).filter(
+                    FoodEntry.user_id == db_user.id
+                ).order_by(FoodEntry.created_at.desc()).limit(3).all()
+                
+                # Последние 3 записи DailyStats
+                recent_daily_stats = db.query(DailyStats).filter(
+                    DailyStats.user_id == db_user.id
+                ).order_by(DailyStats.date.desc()).limit(3).all()
+                
+            finally:
+                db.close()
+            
+            message = f"""
+🔍 **Диагностика таблиц базы данных**
+
+📊 **Таблица FoodEntry (записи о еде):**
+• Всего записей: {food_entries_count}
+
+📈 **Таблица DailyStats (дневная статистика):**  
+• Всего записей: {daily_stats_count}
+
+🕐 **Последние записи FoodEntry:**
+"""
+            
+            for entry in recent_food_entries:
+                message += f"• {entry.created_at.strftime('%d.%m %H:%M')}: {entry.total_calories:.1f} ккал\n"
+            
+            message += "\n📅 **Последние записи DailyStats:**\n"
+            
+            for stat in recent_daily_stats:
+                message += f"• {stat.date.strftime('%d.%m')}: {stat.total_calories:.1f} ккал ({stat.meals_count} блюд)\n"
+            
+            if food_entries_count > 0 and daily_stats_count == 0:
+                message += "\n⚠️ **ПРОБЛЕМА:** Есть записи еды, но нет дневной статистики!"
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка диагностики таблиц: {e}")
+            import traceback
+            logger.error(f"Ошибка debug_stats: {traceback.format_exc()}")
+
+    @staticmethod 
+    async def rebuild_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /rebuildstats - принудительное пересоздание DailyStats из FoodEntry"""
+        user = update.effective_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Получаем все уникальные даты из FoodEntry
+            from database import SessionLocal, FoodEntry
+            from sqlalchemy import func
+            
+            db = SessionLocal()
+            try:
+                # Получаем все уникальные даты записей пользователя
+                unique_dates = db.query(
+                    func.date(FoodEntry.created_at).label('date')
+                ).filter(
+                    FoodEntry.user_id == db_user.id
+                ).distinct().all()
+                
+            finally:
+                db.close()
+            
+            if not unique_dates:
+                await update.message.reply_text("📊 У вас нет записей для пересоздания статистики")
+                return
+            
+            # Пересоздаем статистику для каждой даты
+            rebuilt_count = 0
+            for date_row in unique_dates:
+                date = date_row.date
+                DatabaseManager._update_daily_stats(db_user.id, date)
+                rebuilt_count += 1
+            
+            message = f"""
+✅ **Статистика пересоздана!**
+
+📊 Обработано дат: {rebuilt_count}
+🔄 Все записи DailyStats обновлены
+
+Теперь попробуйте:
+📈 Кнопку "Статистика" - должна показать данные  
+🔍 /debugstats - проверить таблицы
+"""
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка пересоздания статистики: {e}")
+            import traceback
+            logger.error(f"Ошибка rebuild_stats: {traceback.format_exc()}")
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1167,6 +1295,8 @@ def main():
     application.add_handler(CommandHandler("testai", CalorieBotHandlers.test_ai_command))
     application.add_handler(CommandHandler("debuguser", CalorieBotHandlers.debug_user_command))
     application.add_handler(CommandHandler("resetuser", CalorieBotHandlers.reset_user_command))
+    application.add_handler(CommandHandler("debugstats", CalorieBotHandlers.debug_stats_command))
+    application.add_handler(CommandHandler("rebuildstats", CalorieBotHandlers.rebuild_stats_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))

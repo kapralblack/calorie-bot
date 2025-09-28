@@ -184,11 +184,14 @@ class DatabaseManager:
         """Обновить дневную статистику"""
         db = SessionLocal()
         try:
-            # Получаем все записи за день
+            # ИСПРАВЛЕНИЕ: Получаем все записи за день с учетом UTC времени
+            start_of_day = datetime.combine(date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            end_of_day = datetime.combine(date, datetime.max.time()).replace(tzinfo=timezone.utc)
+            
             entries = db.query(FoodEntry).filter(
                 FoodEntry.user_id == user_id,
-                FoodEntry.created_at >= datetime.combine(date, datetime.min.time()),
-                FoodEntry.created_at < datetime.combine(date, datetime.max.time())
+                FoodEntry.created_at >= start_of_day,
+                FoodEntry.created_at < end_of_day
             ).all()
             
             # Считаем суммы
@@ -220,6 +223,11 @@ class DatabaseManager:
             
             db.commit()
             
+            # ЛОГИРОВАНИЕ: Отслеживаем обновление дневной статистики
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"📊 Обновлена дневная статистика для user_id {user_id} за {date}: {total_calories:.1f} ккал, {len(entries)} записей")
+            
         finally:
             db.close()
     
@@ -229,7 +237,8 @@ class DatabaseManager:
         db = SessionLocal()
         try:
             from datetime import timedelta
-            end_date = datetime.now().date()
+            # ИСПРАВЛЕНИЕ: Используем UTC время для корректного поиска записей
+            end_date = datetime.now(timezone.utc).date()
             start_date = end_date - timedelta(days=days-1)
             
             stats = db.query(DailyStats).filter(
@@ -237,6 +246,11 @@ class DatabaseManager:
                 DailyStats.date >= start_date,
                 DailyStats.date <= end_date
             ).order_by(DailyStats.date).all()
+            
+            # ЛОГИРОВАНИЕ: Отслеживаем что находит get_user_stats
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"📈 get_user_stats для user_id {user_id}: найдено {len(stats)} записей за {days} дней ({start_date} - {end_date})")
             
             return stats
         finally:
@@ -247,11 +261,15 @@ class DatabaseManager:
         """Получить калории за сегодня - с прямым подсчетом из записей еды"""
         db = SessionLocal()
         try:
-            # Используем тот же подход что и в get_user_info
+            # ИСПРАВЛЕНИЕ: Используем точные границы дня в UTC
             today = datetime.now(timezone.utc).date()
+            start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
+            end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+            
             today_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
                 FoodEntry.user_id == user_id,
-                func.date(FoodEntry.created_at) == today
+                FoodEntry.created_at >= start_of_day,
+                FoodEntry.created_at <= end_of_day
             ).scalar() or 0
             
             return float(today_calories)
