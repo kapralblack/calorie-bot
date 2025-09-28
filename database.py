@@ -345,3 +345,125 @@ class DatabaseManager:
         finally:
             db.close()
         return False
+
+    @staticmethod
+    def get_user_info(user_id: int) -> dict:
+        """Получить расширенную информацию о пользователе"""
+        db = SessionLocal()
+        try:
+            # Сегодняшние калории
+            today = datetime.now(timezone.utc).date()
+            today_calories = db.query(func.sum(FoodEntry.calories)).filter(
+                FoodEntry.user_id == user_id,
+                func.date(FoodEntry.created_at) == today
+            ).scalar() or 0
+            
+            # Средние за неделю
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            week_entries = db.query(FoodEntry).filter(
+                FoodEntry.user_id == user_id,
+                FoodEntry.created_at >= week_ago
+            ).all()
+            
+            week_total = sum(entry.calories for entry in week_entries)
+            week_avg = week_total / 7 if week_entries else 0
+            
+            # Средние за месяц
+            month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+            month_entries = db.query(FoodEntry).filter(
+                FoodEntry.user_id == user_id,
+                FoodEntry.created_at >= month_ago
+            ).all()
+            
+            month_total = sum(entry.calories for entry in month_entries)
+            month_avg = month_total / 30 if month_entries else 0
+            
+            return {
+                'today_calories': today_calories,
+                'week_avg': week_avg,
+                'month_avg': month_avg
+            }
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_tracking_days(user_id: int) -> int:
+        """Получить количество дней ведения записей"""
+        db = SessionLocal()
+        try:
+            # Количество уникальных дней с записями
+            days_count = db.query(
+                func.count(func.distinct(func.date(FoodEntry.created_at)))
+            ).filter(FoodEntry.user_id == user_id).scalar()
+            
+            return days_count or 0
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_daily_calorie_history(user_id: int, days: int = 14) -> list:
+        """Получить историю калорий по дням"""
+        db = SessionLocal()
+        try:
+            # Получаем записи за последние N дней
+            start_date = datetime.now(timezone.utc) - timedelta(days=days)
+            
+            # Группируем по дням и суммируем калории
+            results = db.query(
+                func.date(FoodEntry.created_at).label('date'),
+                func.sum(FoodEntry.calories).label('calories')
+            ).filter(
+                FoodEntry.user_id == user_id,
+                FoodEntry.created_at >= start_date
+            ).group_by(
+                func.date(FoodEntry.created_at)
+            ).order_by(
+                func.date(FoodEntry.created_at).desc()
+            ).all()
+            
+            return [
+                {
+                    'date': result.date,
+                    'calories': float(result.calories or 0)
+                }
+                for result in results
+            ]
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_weekly_stats(user_id: int) -> list:
+        """Получить статистику по неделям (последние 4 недели)"""
+        db = SessionLocal()
+        try:
+            weekly_stats = []
+            
+            for week_num in range(4):
+                # Определяем даты недели
+                end_date = datetime.now(timezone.utc) - timedelta(days=week_num * 7)
+                start_date = end_date - timedelta(days=6)  # 7 дней включительно
+                
+                # Получаем записи за неделю
+                week_entries = db.query(FoodEntry).filter(
+                    FoodEntry.user_id == user_id,
+                    FoodEntry.created_at >= start_date,
+                    FoodEntry.created_at <= end_date
+                ).all()
+                
+                if week_entries:
+                    # Считаем статистику
+                    total_calories = sum(entry.calories for entry in week_entries)
+                    unique_days = len(set(entry.created_at.date() for entry in week_entries))
+                    avg_calories = total_calories / 7  # среднее за 7 дней
+                    
+                    weekly_stats.append({
+                        'week_start': start_date.date(),
+                        'week_end': end_date.date(),
+                        'total_calories': total_calories,
+                        'avg_calories': avg_calories,
+                        'days_tracked': unique_days
+                    })
+            
+            return weekly_stats
+        finally:
+            db.close()

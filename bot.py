@@ -5,6 +5,9 @@ import asyncio
 import logging
 import json
 from datetime import datetime, timedelta
+import schedule
+import threading
+import time
 from io import BytesIO
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -56,6 +59,7 @@ class CalorieBotHandlers:
 """
         
         keyboard = [
+            [InlineKeyboardButton("👤 Личный кабинет", callback_data="profile")],
             [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
             [InlineKeyboardButton(f"{config.EMOJIS['settings']} Настройки", callback_data="settings")],
             [InlineKeyboardButton(f"{config.EMOJIS['help']} Помощь", callback_data="help")]
@@ -105,6 +109,7 @@ class CalorieBotHandlers:
 
 **Основные команды:**
 /start - Начать работу с ботом
+/profile - Личный кабинет пользователя
 /stats - Показать статистику
 /settings - Настройки профиля
 /help - Эта справка
@@ -383,6 +388,23 @@ class CalorieBotHandlers:
             context.user_data.pop('waiting_for', None)
             context.user_data.pop('correction_photo_id', None)
             await query.edit_message_text("❌ Коррекция отменена")
+        elif query.data == "daily_history":
+            await CalorieBotHandlers.daily_history_handler(update, context)
+        elif query.data == "weekly_stats_detail":
+            await CalorieBotHandlers.weekly_stats_detail_handler(update, context)
+        elif query.data == "back_to_profile":
+            await CalorieBotHandlers.back_to_profile_handler(update, context)
+        elif query.data == "edit_profile":
+            await CalorieBotHandlers.settings_handler(update, context)
+        elif query.data == "profile":
+            # Эмулируем команду /profile для callback query
+            mock_update = type('MockUpdate', (), {
+                'effective_user': query.from_user,
+                'message': type('MockMessage', (), {
+                    'reply_text': query.edit_message_text
+                })()
+            })()
+            await CalorieBotHandlers.profile_command(mock_update, context)
     
     @staticmethod
     async def detailed_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -671,6 +693,265 @@ class CalorieBotHandlers:
             reply_markup=reply_markup
         )
 
+    @staticmethod
+    async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Личный кабинет пользователя"""
+        user = update.effective_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Основная информация
+        profile_info = DatabaseManager.get_user_info(db_user.id)
+        
+        # Количество дней ведения записей
+        tracking_days = DatabaseManager.get_tracking_days(db_user.id)
+        
+        message = f"""
+👤 **Личный кабинет**
+
+**Основная информация:**
+📝 Имя: {user.first_name or 'Не указано'}
+📊 Ведёте записи: {tracking_days} дней
+🎯 Цель калорий: {db_user.daily_calorie_goal} ккал/день
+
+**Физические параметры:**
+⚖️ Вес: {db_user.weight if db_user.weight else 'Не указан'} кг
+📏 Рост: {db_user.height if db_user.height else 'Не указан'} см
+🎂 Возраст: {db_user.age if db_user.age else 'Не указан'} лет
+🚻 Пол: {db_user.gender if db_user.gender else 'Не указан'}
+
+**Текущая статистика:**
+🔥 Сегодня: {profile_info['today_calories']} / {db_user.daily_calorie_goal} ккал
+📈 За неделю: {profile_info['week_avg']:.0f} ккал/день (среднее)
+📅 За месяц: {profile_info['month_avg']:.0f} ккал/день (среднее)
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("📅 История по дням", callback_data="daily_history")],
+            [InlineKeyboardButton("📊 Недельная статистика", callback_data="weekly_stats_detail")],
+            [InlineKeyboardButton("⚙️ Изменить параметры", callback_data="edit_profile")],
+            [InlineKeyboardButton(f"{config.EMOJIS['back']} Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod
+    async def daily_history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показывает историю калорий по дням"""
+        query = update.callback_query
+        user = query.from_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Получаем историю за последние 14 дней
+        daily_history = DatabaseManager.get_daily_calorie_history(db_user.id, days=14)
+        
+        if not daily_history:
+            message = f"{config.EMOJIS['warning']} **История калорий**\n\nПока нет записей о питании.\nНачните добавлять фото еды!"
+        else:
+            message = f"📅 **История калорий (последние 14 дней)**\n\n"
+            
+            for entry in daily_history:
+                date_str = entry['date'].strftime("%d.%m")
+                day_name = entry['date'].strftime("%a")  # сокращенное название дня
+                calories = entry['calories']
+                goal = db_user.daily_calorie_goal
+                
+                # Эмодзи в зависимости от достижения цели
+                if calories >= goal * 0.9 and calories <= goal * 1.1:
+                    status = "🎯"  # близко к цели
+                elif calories < goal * 0.7:
+                    status = "🔽"  # мало
+                elif calories > goal * 1.3:
+                    status = "🔺"  # много
+                else:
+                    status = "📊"  # норма
+                
+                message += f"{status} **{date_str} ({day_name}):** {calories:.0f} ккал\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("📊 Подробная статистика", callback_data="detailed_stats")],
+            [InlineKeyboardButton(f"{config.EMOJIS['back']} К профилю", callback_data="back_to_profile")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod
+    async def weekly_stats_detail_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Детальная недельная статистика"""
+        query = update.callback_query
+        user = query.from_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Получаем статистику за последние 4 недели
+        weekly_stats = DatabaseManager.get_weekly_stats(db_user.id)
+        
+        if not weekly_stats:
+            message = f"{config.EMOJIS['warning']} **Недельная статистика**\n\nНедостаточно данных.\nПродолжайте вести записи!"
+        else:
+            message = f"📊 **Статистика по неделям**\n\n"
+            
+            for i, week in enumerate(weekly_stats):
+                week_num = i + 1
+                avg_calories = week['avg_calories']
+                days_tracked = week['days_tracked']
+                goal = db_user.daily_calorie_goal
+                
+                # Процент от цели
+                goal_percent = (avg_calories / goal * 100) if goal > 0 else 0
+                
+                if goal_percent >= 90 and goal_percent <= 110:
+                    status = "🎯 Отлично"
+                elif goal_percent < 80:
+                    status = "🔽 Мало калорий"
+                elif goal_percent > 120:
+                    status = "🔺 Много калорий"
+                else:
+                    status = "📊 Норма"
+                
+                message += f"**Неделя {week_num}:**\n"
+                message += f"📈 Среднее: {avg_calories:.0f} ккал/день ({goal_percent:.0f}%)\n"
+                message += f"📅 Дней с записями: {days_tracked}/7\n"
+                message += f"{status}\n\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("📅 История по дням", callback_data="daily_history")],
+            [InlineKeyboardButton(f"{config.EMOJIS['back']} К профилю", callback_data="back_to_profile")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod
+    async def back_to_profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Возврат к профилю"""
+        query = update.callback_query
+        
+        # Эмулируем команду /profile
+        mock_update = type('MockUpdate', (), {
+            'effective_user': query.from_user,
+            'message': type('MockMessage', (), {
+                'reply_text': query.edit_message_text
+            })()
+        })()
+        
+        await CalorieBotHandlers.profile_command(mock_update, context)
+
+class WeeklyStatsScheduler:
+    """Класс для планирования еженедельных уведомлений"""
+    
+    def __init__(self, application):
+        self.application = application
+    
+    async def send_weekly_stats(self):
+        """Отправка еженедельной статистики всем активным пользователям"""
+        logger.info("Начинаем отправку еженедельной статистики...")
+        
+        db = DatabaseManager.SessionLocal()
+        try:
+            # Получаем всех активных пользователей
+            from database import User
+            users = db.query(User).filter(User.is_active == True).all()
+            
+            for user in users:
+                try:
+                    # Получаем статистику за неделю
+                    weekly_stats = DatabaseManager.get_weekly_stats(user.id)
+                    
+                    if not weekly_stats:
+                        continue  # Пропускаем пользователей без статистики
+                    
+                    # Формируем сообщение
+                    current_week = weekly_stats[0] if weekly_stats else None
+                    if not current_week:
+                        continue
+                    
+                    avg_calories = current_week['avg_calories']
+                    days_tracked = current_week['days_tracked']
+                    goal = user.daily_calorie_goal
+                    goal_percent = (avg_calories / goal * 100) if goal > 0 else 0
+                    
+                    # Определяем статус
+                    if goal_percent >= 90 and goal_percent <= 110:
+                        status = "🎯 Отлично! Вы близки к цели"
+                        emoji = "🎉"
+                    elif goal_percent < 80:
+                        status = "🔽 Стоит увеличить калорийность"
+                        emoji = "💪"
+                    elif goal_percent > 120:
+                        status = "🔺 Возможно, стоит быть умереннее"
+                        emoji = "🧘‍♂️"
+                    else:
+                        status = "📊 Держитесь в норме"
+                        emoji = "✅"
+                    
+                    message = f"""
+{emoji} **Итоги недели**
+
+**Ваша статистика за последние 7 дней:**
+📈 Среднее потребление: {avg_calories:.0f} ккал/день
+🎯 Ваша цель: {goal} ккал/день
+📊 Выполнение цели: {goal_percent:.0f}%
+📅 Дней с записями: {days_tracked}/7
+
+{status}
+
+**Совет на следующую неделю:**
+{"Продолжайте в том же духе!" if 90 <= goal_percent <= 110 else "Попробуйте следить за калориями каждый день для лучших результатов!"}
+
+Удачи в новой неделе! 🌟
+                    """
+                    
+                    # Отправляем сообщение
+                    await self.application.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=message.strip(),
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    
+                    logger.info(f"Еженедельная статистика отправлена пользователю {user.telegram_id}")
+                    
+                    # Небольшая пауза между отправками
+                    await asyncio.sleep(1)
+                    
+                except Exception as e:
+                    logger.error(f"Ошибка отправки статистики пользователю {user.telegram_id}: {e}")
+                    continue
+                    
+        finally:
+            db.close()
+        
+        logger.info("Отправка еженедельной статистики завершена")
+    
+    def schedule_weekly_stats(self):
+        """Планирование еженедельных уведомлений"""
+        # Отправляем каждое воскресенье в 20:00
+        schedule.every().sunday.at("20:00").do(
+            lambda: asyncio.create_task(self.send_weekly_stats())
+        )
+        
+        # Запускаем планировщик в отдельном потоке
+        def run_scheduler():
+            while True:
+                schedule.run_pending()
+                time.sleep(60)  # Проверяем каждую минуту
+        
+        scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+        scheduler_thread.start()
+        logger.info("Планировщик еженедельной статистики запущен")
+
 def main():
     """Основная функция запуска бота"""
     # Создаем таблицы базы данных
@@ -685,6 +966,7 @@ def main():
     application.add_handler(CommandHandler("help", CalorieBotHandlers.help_command))
     application.add_handler(CommandHandler("stats", CalorieBotHandlers.stats_handler))
     application.add_handler(CommandHandler("settings", CalorieBotHandlers.settings_handler))
+    application.add_handler(CommandHandler("profile", CalorieBotHandlers.profile_command))
     application.add_handler(CommandHandler("fixgoal", CalorieBotHandlers.fix_goal_command))
     
     # Обработчики сообщений
@@ -693,6 +975,10 @@ def main():
     
     # Обработчик inline кнопок
     application.add_handler(CallbackQueryHandler(CalorieBotHandlers.button_handler))
+    
+    # Запускаем планировщик еженедельной статистики
+    scheduler = WeeklyStatsScheduler(application)
+    scheduler.schedule_weekly_stats()
     
     # Запускаем бота
     logger.info(f"Запускаем {config.BOT_NAME}...")
