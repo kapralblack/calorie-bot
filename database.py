@@ -557,13 +557,16 @@ class DatabaseManager:
                 last_activity = None
                 if last_entry:
                     last_activity = last_entry[0]
+                    # Убеждаемся что datetime имеет timezone info
+                    if last_activity and last_activity.tzinfo is None:
+                        last_activity = last_activity.replace(tzinfo=timezone.utc)
                 
                 users_summary.append({
                     'id': user.id,
                     'telegram_id': user.telegram_id,
                     'name': user.first_name or 'Неизвестно',
                     'username': user.username,
-                    'created_at': user.created_at,
+                    'created_at': user.created_at.replace(tzinfo=timezone.utc) if user.created_at and user.created_at.tzinfo is None else user.created_at,
                     'last_activity': last_activity,
                     'entries_count': entries_count,
                     'daily_calorie_goal': user.daily_calorie_goal,
@@ -614,7 +617,7 @@ class DatabaseManager:
                 'avg_calories_per_day': avg_calories_per_day,
                 'recent_entries': [
                     {
-                        'created_at': entry.created_at,
+                        'created_at': entry.created_at.replace(tzinfo=timezone.utc) if entry.created_at and entry.created_at.tzinfo is None else entry.created_at,
                         'calories': entry.total_calories,
                         'confidence': entry.confidence,
                         'food_items': entry.food_items[:100] + '...' if entry.food_items and len(entry.food_items) > 100 else entry.food_items

@@ -437,7 +437,13 @@ class CalorieBotHandlers:
                 
                 # Статус активности
                 if user_info['last_activity']:
-                    days_ago = (datetime.now(timezone.utc) - user_info['last_activity']).days
+                    # Убеждаемся что last_activity имеет timezone info
+                    last_activity = user_info['last_activity']
+                    if last_activity.tzinfo is None:
+                        # Если нет timezone, добавляем UTC
+                        last_activity = last_activity.replace(tzinfo=timezone.utc)
+                    
+                    days_ago = (datetime.now(timezone.utc) - last_activity).days
                     activity = f"{days_ago}д назад" if days_ago > 0 else "сегодня"
                 else:
                     activity = "неактивен"
@@ -620,6 +626,55 @@ class CalorieBotHandlers:
 ✨ Все готово для использования!"""
         
         await update.message.reply_text(message)
+
+    @staticmethod
+    async def admin_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /admindebug - отладка timezone проблем"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        try:
+            users = DatabaseManager.get_all_users_summary()
+            
+            if not users:
+                await update.message.reply_text("📝 Пользователей нет для отладки")
+                return
+            
+            # Берем первого пользователя для отладки
+            user_info = users[0]
+            
+            message = f"""🔧 ОТЛАДКА TIMEZONE
+
+👤 Пользователь: {user_info['name']}
+🆔 ID: {user_info['telegram_id']}
+
+📅 created_at: {user_info['created_at']}
+   timezone: {user_info['created_at'].tzinfo if user_info['created_at'] else 'None'}
+
+🕐 last_activity: {user_info['last_activity']}
+   timezone: {user_info['last_activity'].tzinfo if user_info['last_activity'] else 'None'}
+
+⏰ datetime.now(timezone.utc): {datetime.now(timezone.utc)}
+
+✅ Тест вычитания:"""
+            
+            # Тест вычитания
+            try:
+                if user_info['last_activity']:
+                    days_diff = (datetime.now(timezone.utc) - user_info['last_activity']).days
+                    message += f"\n   {days_diff} дней назад - ✅ OK"
+                else:
+                    message += f"\n   last_activity = None - ✅ OK"
+            except Exception as e:
+                message += f"\n   ОШИБКА: {e} - ❌ FAIL"
+            
+            await update.message.reply_text(message)
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка отладки: {e}")
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1578,6 +1633,7 @@ def main():
     application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
+    application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))
