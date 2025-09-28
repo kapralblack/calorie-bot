@@ -28,10 +28,34 @@ class User(Base):
     age = Column(Integer)
     gender = Column(String(10))  # male/female
     activity_level = Column(String(20), default='moderate')  # low/moderate/high
+    onboarding_completed = Column(Boolean, default=False)  # Завершен ли онбординг
     
     # Связи
     food_entries = relationship("FoodEntry", back_populates="user", cascade="all, delete-orphan")
     
+    def calculate_daily_calorie_goal(self):
+        """Рассчитывает дневную норму калорий по формуле Миффлина-Сан Жеора"""
+        if not all([self.weight, self.height, self.age, self.gender]):
+            return 2000  # Дефолтное значение если данных недостаточно
+        
+        # Базальный метаболизм по формуле Миффлина-Сан Жеора
+        if self.gender.lower() == 'male':
+            bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) + 5
+        else:  # female
+            bmr = (10 * self.weight) + (6.25 * self.height) - (5 * self.age) - 161
+        
+        # Коэффициент активности
+        activity_multipliers = {
+            'low': 1.2,      # Малоподвижный образ жизни
+            'moderate': 1.55, # Умеренная активность
+            'high': 1.9      # Высокая активность
+        }
+        
+        multiplier = activity_multipliers.get(self.activity_level, 1.55)
+        daily_calories = int(bmr * multiplier)
+        
+        return daily_calories
+
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, username={self.username})>"
 
@@ -625,5 +649,45 @@ class DatabaseManager:
                     for entry in recent_entries
                 ]
             }
+        finally:
+            db.close()
+    
+    @staticmethod
+    def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str):
+        """Завершить онбординг пользователя и рассчитать персональную норму калорий"""
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            if not user:
+                return False
+            
+            # Обновляем данные пользователя
+            user.weight = weight
+            user.height = height
+            user.age = age
+            user.gender = gender.lower()
+            user.activity_level = activity_level
+            user.onboarding_completed = True
+            
+            # Рассчитываем персональную норму калорий
+            user.daily_calorie_goal = user.calculate_daily_calorie_goal()
+            
+            db.commit()
+            logger.info(f"Онбординг завершен для пользователя {telegram_id}. Цель калорий: {user.daily_calorie_goal}")
+            return user.daily_calorie_goal
+        except Exception as e:
+            logger.error(f"Ошибка при завершении онбординга: {e}")
+            db.rollback()
+            return False
+        finally:
+            db.close()
+
+    @staticmethod 
+    def is_onboarding_completed(telegram_id: int) -> bool:
+        """Проверить завершен ли онбординг у пользователя"""
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            return user.onboarding_completed if user else False
         finally:
             db.close()

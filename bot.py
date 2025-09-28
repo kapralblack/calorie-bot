@@ -30,7 +30,7 @@ class CalorieBotHandlers:
     
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /start"""
+        """Команда /start с персонализированным онбордингом"""
         user = update.effective_user
         
         # Сбрасываем флаг сохранения анализа при возврате в главное меню
@@ -43,6 +43,12 @@ class CalorieBotHandlers:
             last_name=user.last_name
         )
         
+        # Проверяем завершен ли онбординг
+        if not DatabaseManager.is_onboarding_completed(user.id):
+            await CalorieBotHandlers.start_onboarding(update, context)
+            return
+        
+        # Если онбординг завершен, показываем обычное меню
         # Получаем быструю статистику для приветствия
         today_calories = DatabaseManager.get_today_calories(telegram_user.id)
         daily_goal = telegram_user.daily_calorie_goal
@@ -54,16 +60,16 @@ class CalorieBotHandlers:
         welcome_message = f"""
 🍎 **{config.BOT_NAME}**
         
-👋 Привет, **{user.first_name}**! 
+👋 С возвращением, **{user.first_name}**! 
 
 📊 **Сегодня:** {progress_text}
 💡 **Совет:** Отправьте фото еды для анализа калорий
 
-🔥 **Возможности бота:**
-• 📸 AI анализ фото еды  
+🔥 **Ваш персональный помощник готов:**
+• 📸 AI анализ фото еды с учетом ваших целей
 • 📈 Умная статистика питания
-• 🎯 Персональные цели и отслеживание
-• 📱 Личный кабинет с историей
+• 🎯 Персональная норма калорий: {daily_goal} ккал/день
+• 📱 Полная история ваших достижений
 
 Выберите действие или отправьте фото еды:
 """
@@ -971,6 +977,367 @@ class CalorieBotHandlers:
             
         except Exception as e:
             await query.edit_message_text(f"❌ Ошибка получения статуса: {e}")
+
+    # ======= ПЕРСОНАЛИЗИРОВАННЫЙ ОНБОРДИНГ =======
+    
+    @staticmethod
+    async def start_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Начать процесс персонализированного онбординга"""
+        user = update.effective_user
+        
+        welcome_message = f"""
+🎯 **Добро пожаловать в {config.BOT_NAME}!**
+
+👋 Привет, **{user.first_name}**!
+
+Я ваш персональный AI-помощник по подсчету калорий! 
+
+🔬 **Для точного расчета калорий** мне нужно узнать о вас несколько вещей:
+• 👤 Ваш пол, возраст, рост и вес
+• 🏃 Уровень физической активности  
+• 🎯 Автоматический расчет персональной нормы калорий
+
+⏱️ **Это займет всего 2 минуты**, но сделает анализ намного точнее!
+
+💡 **После настройки вы получите:**
+• 🎯 Персональную норму калорий именно для вас
+• 📊 Точный анализ прогресса к цели
+• 💪 Рекомендации по питанию
+
+Готовы настроить ваш профиль?
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🚀 Да, давайте настроим!", callback_data="start_setup")],
+            [InlineKeyboardButton("⏭️ Пропустить (базовые настройки)", callback_data="skip_setup")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                welcome_message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                welcome_message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+
+    @staticmethod
+    async def onboarding_gender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Шаг 1: Выбор пола"""
+        query = update.callback_query
+        
+        message = f"""
+👤 **Шаг 1 из 5: Ваш пол**
+
+Пол влияет на базальный метаболизм и расчет нормы калорий.
+
+Выберите ваш пол:
+"""
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("👨 Мужской", callback_data="gender_male"),
+                InlineKeyboardButton("👩 Женский", callback_data="gender_female")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod
+    async def onboarding_age(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Шаг 2: Ввод возраста"""
+        query = update.callback_query
+        
+        # Сохраняем выбранный пол
+        if query.data == "gender_male":
+            context.user_data['onboarding_gender'] = 'male'
+            gender_text = "мужской"
+        else:
+            context.user_data['onboarding_gender'] = 'female'
+            gender_text = "женский"
+        
+        message = f"""
+🎂 **Шаг 2 из 5: Ваш возраст**
+
+✅ Пол: {gender_text}
+
+Возраст нужен для точного расчета метаболизма.
+
+**Напишите ваш возраст** (например: 25):
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="start_setup")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+        
+        context.user_data['waiting_for'] = 'age'
+
+    @staticmethod
+    async def onboarding_height(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Шаг 3: Ввод роста"""
+        try:
+            age = int(update.message.text.strip())
+            if age < 10 or age > 100:
+                await update.message.reply_text("❌ Пожалуйста, введите корректный возраст (10-100 лет)")
+                return
+            
+            context.user_data['onboarding_age'] = age
+            gender_text = "мужской" if context.user_data['onboarding_gender'] == 'male' else "женский"
+            
+            message = f"""
+📏 **Шаг 3 из 5: Ваш рост**
+
+✅ Пол: {gender_text}
+✅ Возраст: {age} лет
+
+Рост необходим для расчета индекса массы тела.
+
+**Напишите ваш рост в сантиметрах** (например: 175):
+"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="onboarding_age")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            context.user_data['waiting_for'] = 'height'
+            
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите возраст числом (например: 25)")
+
+    @staticmethod
+    async def onboarding_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Шаг 4: Ввод веса"""
+        try:
+            height = float(update.message.text.strip())
+            if height < 100 or height > 250:
+                await update.message.reply_text("❌ Пожалуйста, введите корректный рост (100-250 см)")
+                return
+            
+            context.user_data['onboarding_height'] = height
+            gender_text = "мужской" if context.user_data['onboarding_gender'] == 'male' else "женский"
+            age = context.user_data['onboarding_age']
+            
+            message = f"""
+⚖️ **Шаг 4 из 5: Ваш вес**
+
+✅ Пол: {gender_text}
+✅ Возраст: {age} лет
+✅ Рост: {height:.0f} см
+
+Вес нужен для точного расчета нормы калорий.
+
+**Напишите ваш текущий вес в килограммах** (например: 70 или 65.5):
+"""
+            
+            keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="onboarding_height")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            context.user_data['waiting_for'] = 'weight'
+            
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите рост числом (например: 175)")
+
+    @staticmethod
+    async def onboarding_activity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Шаг 5: Выбор уровня активности"""
+        try:
+            weight = float(update.message.text.strip())
+            if weight < 30 or weight > 200:
+                await update.message.reply_text("❌ Пожалуйста, введите корректный вес (30-200 кг)")
+                return
+            
+            context.user_data['onboarding_weight'] = weight
+            gender_text = "мужской" if context.user_data['onboarding_gender'] == 'male' else "женский"
+            age = context.user_data['onboarding_age']
+            height = context.user_data['onboarding_height']
+            
+            message = f"""
+🏃 **Шаг 5 из 5: Уровень активности**
+
+✅ Пол: {gender_text}
+✅ Возраст: {age} лет
+✅ Рост: {height:.0f} см  
+✅ Вес: {weight:.1f} кг
+
+Выберите ваш уровень физической активности:
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("🛋️ Низкий (сидячая работа, нет спорта)", callback_data="activity_low")],
+                [InlineKeyboardButton("🚶 Умеренный (легкие тренировки 1-3 раза в неделю)", callback_data="activity_moderate")],
+                [InlineKeyboardButton("🏃 Высокий (интенсивные тренировки 4-7 раз в неделю)", callback_data="activity_high")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+            context.user_data['waiting_for'] = 'activity'
+            
+        except ValueError:
+            await update.message.reply_text("❌ Пожалуйста, введите вес числом (например: 70 или 65.5)")
+
+    @staticmethod
+    async def complete_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Завершение онбординга с расчетом персональной нормы"""
+        query = update.callback_query
+        user = update.effective_user
+        
+        # Определяем уровень активности
+        activity_mapping = {
+            'activity_low': ('low', 'Низкий'),
+            'activity_moderate': ('moderate', 'Умеренный'), 
+            'activity_high': ('high', 'Высокий')
+        }
+        
+        activity_level, activity_text = activity_mapping[query.data]
+        
+        # Получаем все данные из контекста
+        gender = context.user_data['onboarding_gender']
+        age = context.user_data['onboarding_age']
+        height = context.user_data['onboarding_height']
+        weight = context.user_data['onboarding_weight']
+        
+        # Завершаем онбординг и получаем рассчитанную норму калорий
+        daily_calories = DatabaseManager.complete_onboarding(
+            telegram_id=user.id,
+            weight=weight,
+            height=height,
+            age=age,
+            gender=gender,
+            activity_level=activity_level
+        )
+        
+        if daily_calories:
+            # Очищаем данные онбординга
+            for key in ['onboarding_gender', 'onboarding_age', 'onboarding_height', 'onboarding_weight', 'waiting_for']:
+                context.user_data.pop(key, None)
+            
+            # Рассчитываем ИМТ
+            bmi = weight / ((height/100) ** 2)
+            if bmi < 18.5:
+                bmi_status = "Недостаток веса"
+                bmi_emoji = "📉"
+            elif bmi < 25:
+                bmi_status = "Нормальный вес"
+                bmi_emoji = "✅"
+            elif bmi < 30:
+                bmi_status = "Избыточный вес"
+                bmi_emoji = "📈"
+            else:
+                bmi_status = "Ожирение"
+                bmi_emoji = "🔺"
+            
+            gender_text = "мужской" if gender == 'male' else "женский"
+            
+            success_message = f"""
+🎉 **Профиль успешно настроен!**
+
+👤 **Ваши данные:**
+• Пол: {gender_text}
+• Возраст: {age} лет
+• Рост: {height:.0f} см
+• Вес: {weight:.1f} кг
+• Активность: {activity_text}
+
+📊 **Рассчитанные показатели:**
+• ИМТ: {bmi:.1f} - {bmi_status} {bmi_emoji}
+• **Ваша норма калорий: {daily_calories} ккал/день** 🎯
+
+🚀 **Теперь все готово!**
+Отправьте фото вашей еды, и я дам точный анализ с учетом ваших персональных целей!
+
+💡 **Совет:** Норма рассчитана для поддержания текущего веса. Вы можете изменить цель в настройках для похудения или набора массы.
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("🍽️ Начать анализ еды!", callback_data="add_photo_tip")],
+                [InlineKeyboardButton("👤 Мой профиль", callback_data="profile")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                success_message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+        else:
+            await query.edit_message_text("❌ Ошибка при сохранении данных. Попробуйте позже.")
+
+    @staticmethod
+    async def skip_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Пропустить онбординг и использовать базовые настройки"""
+        query = update.callback_query
+        user = update.effective_user
+        
+        # Устанавливаем базовые настройки
+        DatabaseManager.complete_onboarding(
+            telegram_id=user.id,
+            weight=70.0,  # Средний вес
+            height=170.0,  # Средний рост
+            age=30,       # Средний возраст
+            gender='male',  # По умолчанию
+            activity_level='moderate'  # Умеренная активность
+        )
+        
+        message = f"""
+⏭️ **Онбординг пропущен**
+
+Установлены базовые настройки:
+• Норма калорий: **2000 ккал/день** 📊
+
+💡 **Рекомендация:** Для более точного анализа калорий настройте ваш профиль в любое время через 👤 Мой профиль → ⚙️ Настройки
+
+🍽️ **Готово к использованию!**
+Отправьте фото еды и получите анализ калорий!
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("📸 Анализ фото", callback_data="add_photo_tip")],
+            [InlineKeyboardButton("👤 Мой профиль", callback_data="profile")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1338,6 +1705,16 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.my_goal_handler(update, context) 
         elif query.data == "data_status":
             await CalorieBotHandlers.data_status_handler(update, context)
+        
+        # Онбординг callbacks
+        elif query.data == "start_setup":
+            await CalorieBotHandlers.onboarding_gender(update, context)
+        elif query.data == "skip_setup":
+            await CalorieBotHandlers.skip_onboarding(update, context)
+        elif query.data in ["gender_male", "gender_female"]:
+            await CalorieBotHandlers.onboarding_age(update, context)
+        elif query.data in ["activity_low", "activity_moderate", "activity_high"]:
+            await CalorieBotHandlers.complete_onboarding(update, context)
     
     @staticmethod
     async def detailed_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1434,6 +1811,12 @@ class CalorieBotHandlers:
         # Проверяем, ожидаем ли мы ввод настроек
         if context.user_data.get('waiting_for') == 'correction':
             await CalorieBotHandlers.process_correction(update, context, text)
+        elif context.user_data.get('waiting_for') == 'age':
+            await CalorieBotHandlers.onboarding_height(update, context)
+        elif context.user_data.get('waiting_for') == 'height':
+            await CalorieBotHandlers.onboarding_weight(update, context)
+        elif context.user_data.get('waiting_for') == 'weight':
+            await CalorieBotHandlers.onboarding_activity(update, context)
         elif context.user_data.get('waiting_for'):
             await CalorieBotHandlers.process_settings_input(update, context, text)
         else:
