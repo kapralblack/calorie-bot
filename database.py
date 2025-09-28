@@ -28,7 +28,7 @@ class User(Base):
     age = Column(Integer)
     gender = Column(String(10))  # male/female
     activity_level = Column(String(20), default='moderate')  # low/moderate/high
-    onboarding_completed = Column(Boolean, default=False)  # Завершен ли онбординг
+    # onboarding_completed = Column(Boolean, default=False)  # Временно отключено для совместимости
     
     # Связи
     food_entries = relationship("FoodEntry", back_populates="user", cascade="all, delete-orphan")
@@ -667,7 +667,9 @@ class DatabaseManager:
             user.age = age
             user.gender = gender.lower()
             user.activity_level = activity_level
-            user.onboarding_completed = True
+            
+            # Примечание: onboarding_completed временно отключено для совместимости
+            # Завершенность онбординга определяется наличием основных данных
             
             # Рассчитываем персональную норму калорий
             user.daily_calorie_goal = user.calculate_daily_calorie_goal()
@@ -688,6 +690,10 @@ class DatabaseManager:
         db = SessionLocal()
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
-            return user.onboarding_completed if user else False
+            if not user:
+                return False
+            
+            # Считаем что пользователь прошел онбординг если у него есть основные данные
+            return bool(user.weight and user.height and user.age and user.gender)
         finally:
             db.close()
