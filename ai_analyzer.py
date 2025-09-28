@@ -275,11 +275,11 @@ class CalorieAnalyzer:
             for i, item in enumerate(result['food_items'], 1):
                 name = translate_food_name(item.get('name', 'Неизвестное блюдо'))
                 calories = item.get('calories', 0)
-                portion = item.get('portion_size', '')
+                weight = item.get('estimated_weight', '')
                 
                 message += f"{i}. {name}"
-                if portion:
-                    message += f" ({portion})"
+                if weight:
+                    message += f" (~{weight})"
                 message += f" - {calories:.0f} ккал\n"
         
         # Уверенность AI

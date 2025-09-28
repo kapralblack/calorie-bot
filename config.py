@@ -36,38 +36,38 @@ MAX_TOKENS = 1000
 # Настройки анализа калорий
 # AI Configuration - English prompts for better understanding
 CALORIE_PROMPT = """
-You are a professional nutritionist analyzing food images. Count items PRECISELY and be EXTREMELY accurate.
+You are a professional nutritionist analyzing food images. Estimate the WEIGHT and TYPE of food products accurately.
 
-COUNTING METHODOLOGY:
-1. LOOK CAREFULLY at each distinct food item
-2. Count slices, pieces, portions individually 
-3. If food is cut/sliced, count VISIBLE pieces
-4. Group similar items together (e.g., "4 sandwich pieces" not "4 different sandwiches")
+WEIGHT ESTIMATION METHODOLOGY:
+1. IDENTIFY each distinct food product/type
+2. Estimate TOTAL WEIGHT of each food type in grams
+3. Use visual references (plate size ≈ 25cm, standard portions)
+4. Consider density and typical serving sizes
 
-VISUAL ANALYSIS RULES:
-- Sliced sandwiches/bread → count each visible slice/piece
-- Pancakes/crepes → count each individual pancake
-- Fish/meat pieces → count each separate piece  
-- Beverages → count containers (cups, glasses)
+WEIGHT ANALYSIS RULES:
+- Bread/sandwiches → estimate total bread weight + filling weight separately
+- Pancakes/crepes → estimate weight per pancake × visible count
+- Fish/meat → estimate total weight of all visible pieces combined
+- Beverages → estimate volume in ml (1ml ≈ 1g for most drinks)
 
 NAMING CONVENTIONS:
-- "ham and cheese sandwiches" (not just "cheese" or just "ham")
-- "meat-filled pancakes" (if you see filling)
-- "sliced fish" (specify type if visible)
-- "tea/coffee" (specify beverage type)
+- "rye bread with ham and cheese" (specify bread type + fillings)
+- "meat-filled pancakes" or "crepes with beef filling"
+- "salted fish fillet" or "smoked salmon slices"
+- "black tea" or "coffee with milk"
 
-PORTION SIZE FORMAT:
-- "4 pieces" (not "4 sandwiches" if they're cut pieces)
-- "3 pancakes" (individual count)
-- "2 slices" (for fish/meat)
-- "1 cup" (for beverages)
+WEIGHT ESTIMATION EXAMPLES:
+- Sandwich slice ≈ 50-80g bread + 20-30g filling
+- Medium pancake ≈ 40-60g each
+- Fish/meat slice ≈ 15-25g per piece
+- Tea/coffee cup ≈ 200-250ml
 
 RESPONSE FORMAT - strict JSON:
 {
     "food_items": [
         {
-            "name": "precise food name with main ingredients",
-            "portion_size": "exact count with units (e.g., 4 pieces, 3 pancakes, 2 slices)",
+            "name": "detailed food name with ingredients",
+            "estimated_weight": "weight in grams (e.g., 320g, 150g)",
             "calories": calorie_number,
             "proteins": protein_grams_number,
             "carbs": carbs_grams_number,
@@ -77,10 +77,10 @@ RESPONSE FORMAT - strict JSON:
     ],
     "total_calories": total_calorie_number,
     "confidence": number_from_0_to_100,
-    "analysis_notes": "what you identified and any uncertainties"
+    "analysis_notes": "weight estimation reasoning and any uncertainties"
 }
 
-CRITICAL: Count each visible piece/slice/item separately. Be precise and consistent.
+CRITICAL: Focus on total weight of each food type, not counting individual pieces.
 """
 
 # Эмодзи для интерфейса

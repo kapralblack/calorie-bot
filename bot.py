@@ -228,7 +228,7 @@ class CalorieBotHandlers:
             # Клавиатура с действиями
             keyboard = [
                 [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
-                [InlineKeyboardButton("🔧 Исправить количество", callback_data="correct_analysis")],
+                [InlineKeyboardButton("🔧 Исправить анализ", callback_data="correct_analysis")],
                 [InlineKeyboardButton(f"{config.EMOJIS['food']} Добавить еще блюдо", callback_data="add_more")],
             ]
             
@@ -584,7 +584,7 @@ class CalorieBotHandlers:
         # Показываем текущий анализ для удобства
         result = context.user_data['last_analysis_result']
         current_items = "\n".join([
-            f"• {item['name']}: {item['portion_size']}"
+            f"• {item['name']}: {item.get('estimated_weight', 'вес не указан')}"
             for item in result.get('food_items', [])
         ])
         
@@ -596,13 +596,13 @@ class CalorieBotHandlers:
 **Общие калории:** {result.get('total_calories', 0)} ккал
 
 **Как исправить:**
-• `calories 850` - изменить общие калории
-• `бутерброды 4 штуки` - исправить количество блюда
+• `calories 850` - изменить общие калории  
+• `бутерброды 320г` - исправить вес продукта
 
 **Примеры:**
 • `calories 900`
-• `бутерброды 4 штуки`
-• `блины 2 штуки`
+• `бутерброды 320г`
+• `блины 180г`
 
 Напишите ваше исправление:
 """
@@ -640,15 +640,15 @@ class CalorieBotHandlers:
                     message = "❌ Калории должны быть от 0 до 5000"
                     success = False
             else:
-                # Коррекция количества блюда
+                # Коррекция веса продукта
                 parts = text.split()
-                if len(parts) >= 3:
+                if len(parts) >= 2:
                     dish_name = parts[0]
-                    new_amount = ' '.join(parts[1:])
-                    message = f"✅ Исправлено: {dish_name} - {new_amount}"
+                    new_weight = ' '.join(parts[1:])
+                    message = f"✅ Исправлено: {dish_name} - {new_weight}"
                     success = True
                 else:
-                    message = "❌ Неверный формат. Используйте: 'блюдо количество единицы'"
+                    message = "❌ Неверный формат. Используйте: 'блюдо вес' (например: блины 180г)"
                     success = False
             
         except ValueError:
