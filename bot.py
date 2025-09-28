@@ -346,6 +346,244 @@ class CalorieBotHandlers:
             await update.message.reply_text(f"❌ Ошибка пересоздания статистики: {e}")
             import traceback
             logger.error(f"Ошибка rebuild_stats: {traceback.format_exc()}")
+
+    # ======= ADMIN COMMANDS =======
+    @staticmethod
+    def is_admin(user_id):
+        """Проверяет является ли пользователь админом"""
+        if not config.ADMIN_USER_ID:
+            return False
+        try:
+            return str(user_id) == config.ADMIN_USER_ID
+        except:
+            return False
+
+    @staticmethod
+    async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /adminstats - общая статистика по боту"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        try:
+            stats = DatabaseManager.get_admin_stats()
+            
+            message = f"""
+👑 **Административная панель**
+📊 **Общая статистика бота**
+
+👥 **Пользователи:**
+• Всего зарегистрировано: {stats['total_users']}
+• Активных за 7 дней: {stats['active_users_7d']}
+• С настроенными целями: {stats['configured_users']}
+
+📱 **Активность:**
+• Всего записей о еде: {stats['total_food_entries']}
+• Записей сегодня: {stats['today_entries']}
+
+🏆 **Топ пользователей:**
+"""
+            
+            for i, user in enumerate(stats['top_users'], 1):
+                message += f"{i}. {user['name']} - {user['entries_count']} записей\n"
+            
+            if not stats['top_users']:
+                message += "Нет активных пользователей\n"
+            
+            message += f"""
+
+🔧 **Админские команды:**
+/adminusers - список пользователей
+/adminuser [ID] - информация о пользователе
+/adminexport - экспорт данных
+"""
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка получения статистики: {e}")
+
+    @staticmethod
+    async def admin_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /adminusers - список всех пользователей"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        try:
+            users = DatabaseManager.get_all_users_summary()
+            
+            if not users:
+                await update.message.reply_text("📝 Пользователей пока нет")
+                return
+            
+            message = f"👥 **Все пользователи ({len(users)}):**\n\n"
+            
+            for i, user_info in enumerate(users[:15], 1):  # Показываем только первых 15
+                name = user_info['name']
+                username = f"@{user_info['username']}" if user_info['username'] else 'нет username'
+                entries = user_info['entries_count']
+                goal = user_info['daily_calorie_goal']
+                
+                # Статус активности
+                if user_info['last_activity']:
+                    days_ago = (datetime.now(timezone.utc) - user_info['last_activity']).days
+                    activity = f"{days_ago}д назад" if days_ago > 0 else "сегодня"
+                else:
+                    activity = "неактивен"
+                
+                message += f"{i}. **{name}** ({username})\n"
+                message += f"   ID: `{user_info['telegram_id']}` • {entries} записей • цель {goal} ккал\n"
+                message += f"   Активность: {activity}\n\n"
+            
+            if len(users) > 15:
+                message += f"... и еще {len(users) - 15} пользователей\n\n"
+            
+            message += "💡 Используйте /adminuser [ID] для детальной информации"
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка получения списка пользователей: {e}")
+
+    @staticmethod
+    async def admin_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /adminuser [telegram_id] - детальная информация о пользователе"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("📝 Использование: /adminuser [telegram_id]")
+            return
+        
+        try:
+            telegram_id = int(context.args[0])
+            user_info = DatabaseManager.get_user_detailed_info(telegram_id)
+            
+            if not user_info:
+                await update.message.reply_text(f"❌ Пользователь с ID {telegram_id} не найден")
+                return
+            
+            user_obj = user_info['user']
+            
+            message = f"""
+🔍 **Детальная информация о пользователе**
+
+👤 **Основные данные:**
+• Имя: {user_obj.first_name or 'Неизвестно'}
+• Username: @{user_obj.username or 'нет'}
+• Telegram ID: `{user_obj.telegram_id}`
+• Дата регистрации: {user_obj.created_at.strftime('%d.%m.%Y %H:%M')}
+
+⚙️ **Настройки:**
+• Цель калорий: {user_obj.daily_calorie_goal} ккал/день
+• Вес: {user_obj.weight or 'не указан'} {'кг' if user_obj.weight else ''}
+• Рост: {user_obj.height or 'не указан'} {'см' if user_obj.height else ''}
+• Возраст: {user_obj.age or 'не указан'} {'лет' if user_obj.age else ''}
+• Пол: {('мужской' if user_obj.gender == 'male' else 'женский') if user_obj.gender else 'не указан'}
+
+📊 **Статистика:**
+• Всего записей: {user_info['total_entries']}
+• Дней с записями: {user_info['unique_days']}
+• Всего калорий: {user_info['total_calories']:.0f} ккал
+• Среднее в день: {user_info['avg_calories_per_day']:.0f} ккал
+
+🕒 **Последние записи:**
+"""
+            
+            for entry in user_info['recent_entries']:
+                date_str = entry['created_at'].strftime('%d.%m %H:%M')
+                confidence_emoji = "🟢" if entry['confidence'] > 80 else "🟡" if entry['confidence'] > 60 else "🔴"
+                message += f"• {date_str}: {entry['calories']:.0f} ккал {confidence_emoji}\n"
+            
+            if not user_info['recent_entries']:
+                message += "Записей нет\n"
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+        except ValueError:
+            await update.message.reply_text("❌ Неверный формат ID. Используйте числовой ID.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка получения информации: {e}")
+
+    @staticmethod
+    async def admin_export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /adminexport - экспорт данных пользователей в CSV формате"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        try:
+            users = DatabaseManager.get_all_users_summary()
+            
+            if not users:
+                await update.message.reply_text("📝 Нет данных для экспорта")
+                return
+            
+            # Создаем CSV данные
+            import io
+            import csv
+            
+            csv_data = io.StringIO()
+            writer = csv.writer(csv_data)
+            
+            # Заголовки
+            writer.writerow([
+                'Telegram ID', 'Имя', 'Username', 'Дата регистрации',
+                'Последняя активность', 'Количество записей', 'Цель калорий',
+                'Вес', 'Рост', 'Возраст', 'Пол'
+            ])
+            
+            # Данные пользователей
+            for user_info in users:
+                writer.writerow([
+                    user_info['telegram_id'],
+                    user_info['name'],
+                    user_info['username'] or '',
+                    user_info['created_at'].strftime('%Y-%m-%d %H:%M:%S') if user_info['created_at'] else '',
+                    user_info['last_activity'].strftime('%Y-%m-%d %H:%M:%S') if user_info['last_activity'] else '',
+                    user_info['entries_count'],
+                    user_info['daily_calorie_goal'],
+                    user_info['weight'] or '',
+                    user_info['height'] or '',
+                    user_info['age'] or '',
+                    user_info['gender'] or ''
+                ])
+            
+            # Отправляем файл
+            csv_content = csv_data.getvalue().encode('utf-8')
+            
+            from datetime import datetime
+            filename = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            await update.message.reply_document(
+                document=io.BytesIO(csv_content),
+                filename=filename,
+                caption=f"📊 Экспорт данных пользователей\n👥 Пользователей: {len(users)}\n📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка экспорта данных: {e}")
+            import traceback
+            logger.error(f"Ошибка admin_export: {traceback.format_exc()}")
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1297,6 +1535,12 @@ def main():
     application.add_handler(CommandHandler("resetuser", CalorieBotHandlers.reset_user_command))
     application.add_handler(CommandHandler("debugstats", CalorieBotHandlers.debug_stats_command))
     application.add_handler(CommandHandler("rebuildstats", CalorieBotHandlers.rebuild_stats_command))
+    
+    # Админские команды
+    application.add_handler(CommandHandler("adminstats", CalorieBotHandlers.admin_stats_command))
+    application.add_handler(CommandHandler("adminusers", CalorieBotHandlers.admin_users_command))
+    application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
+    application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))

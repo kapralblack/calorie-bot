@@ -479,3 +479,148 @@ class DatabaseManager:
             return weekly_stats
         finally:
             db.close()
+
+    @staticmethod
+    def get_admin_stats():
+        """Получить общую статистику по боту для администратора"""
+        db = SessionLocal()
+        try:
+            # Общая статистика по пользователям
+            total_users = db.query(func.count(User.id)).scalar() or 0
+            
+            # Активные пользователи (с записями за последние 7 дней)
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            active_users = db.query(func.count(func.distinct(FoodEntry.user_id))).filter(
+                FoodEntry.created_at >= week_ago
+            ).scalar() or 0
+            
+            # Всего записей о еде
+            total_food_entries = db.query(func.count(FoodEntry.id)).scalar() or 0
+            
+            # Записей за сегодня
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_entries = db.query(func.count(FoodEntry.id)).filter(
+                FoodEntry.created_at >= today_start
+            ).scalar() or 0
+            
+            # Пользователи с настроенными целями калорий (не дефолтные)
+            configured_users = db.query(func.count(User.id)).filter(
+                User.daily_calorie_goal != 2000
+            ).scalar() or 0
+            
+            # Самые активные пользователи (топ 5)
+            top_users = db.query(
+                User.first_name, 
+                User.telegram_id,
+                func.count(FoodEntry.id).label('entries_count')
+            ).join(FoodEntry).group_by(User.id, User.first_name, User.telegram_id).order_by(
+                func.count(FoodEntry.id).desc()
+            ).limit(5).all()
+            
+            return {
+                'total_users': total_users,
+                'active_users_7d': active_users,
+                'total_food_entries': total_food_entries,
+                'today_entries': today_entries,
+                'configured_users': configured_users,
+                'top_users': [
+                    {
+                        'name': user.first_name or 'Неизвестно',
+                        'telegram_id': user.telegram_id,
+                        'entries_count': user.entries_count
+                    }
+                    for user in top_users
+                ]
+            }
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_all_users_summary():
+        """Получить краткую информацию по всем пользователям"""
+        db = SessionLocal()
+        try:
+            users = db.query(User).order_by(User.created_at.desc()).all()
+            
+            users_summary = []
+            for user in users:
+                # Считаем количество записей для каждого пользователя
+                entries_count = db.query(func.count(FoodEntry.id)).filter(
+                    FoodEntry.user_id == user.id
+                ).scalar() or 0
+                
+                # Последняя активность
+                last_entry = db.query(FoodEntry.created_at).filter(
+                    FoodEntry.user_id == user.id
+                ).order_by(FoodEntry.created_at.desc()).first()
+                
+                last_activity = None
+                if last_entry:
+                    last_activity = last_entry[0]
+                
+                users_summary.append({
+                    'id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'name': user.first_name or 'Неизвестно',
+                    'username': user.username,
+                    'created_at': user.created_at,
+                    'last_activity': last_activity,
+                    'entries_count': entries_count,
+                    'daily_calorie_goal': user.daily_calorie_goal,
+                    'weight': user.weight,
+                    'height': user.height
+                })
+            
+            return users_summary
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_user_detailed_info(telegram_id: int):
+        """Получить детальную информацию о пользователе для админа"""
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            if not user:
+                return None
+            
+            # Статистика пользователя
+            total_entries = db.query(func.count(FoodEntry.id)).filter(
+                FoodEntry.user_id == user.id
+            ).scalar() or 0
+            
+            # Последние 5 записей
+            recent_entries = db.query(FoodEntry).filter(
+                FoodEntry.user_id == user.id
+            ).order_by(FoodEntry.created_at.desc()).limit(5).all()
+            
+            # Общие калории за все время
+            total_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
+                FoodEntry.user_id == user.id
+            ).scalar() or 0
+            
+            # Общие дни с записями
+            unique_days = db.query(
+                func.count(func.distinct(func.date(FoodEntry.created_at)))
+            ).filter(FoodEntry.user_id == user.id).scalar() or 0
+            
+            avg_calories_per_day = float(total_calories) / unique_days if unique_days > 0 else 0
+            
+            return {
+                'user': user,
+                'total_entries': total_entries,
+                'total_calories': float(total_calories),
+                'unique_days': unique_days,
+                'avg_calories_per_day': avg_calories_per_day,
+                'recent_entries': [
+                    {
+                        'created_at': entry.created_at,
+                        'calories': entry.total_calories,
+                        'confidence': entry.confidence,
+                        'food_items': entry.food_items[:100] + '...' if entry.food_items and len(entry.food_items) > 100 else entry.food_items
+                    }
+                    for entry in recent_entries
+                ]
+            }
+        finally:
+            db.close()
