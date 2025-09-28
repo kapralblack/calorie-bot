@@ -4,7 +4,7 @@
 import asyncio
 import logging
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import schedule
 import threading
 import time
@@ -371,30 +371,32 @@ class CalorieBotHandlers:
             stats = DatabaseManager.get_admin_stats()
             
             message = f"""
-👑 **Административная панель**
-📊 **Общая статистика бота**
+👑 <b>Административная панель</b>
+📊 <b>Общая статистика бота</b>
 
-👥 **Пользователи:**
+👥 <b>Пользователи:</b>
 • Всего зарегистрировано: {stats['total_users']}
 • Активных за 7 дней: {stats['active_users_7d']}
 • С настроенными целями: {stats['configured_users']}
 
-📱 **Активность:**
+📱 <b>Активность:</b>
 • Всего записей о еде: {stats['total_food_entries']}
 • Записей сегодня: {stats['today_entries']}
 
-🏆 **Топ пользователей:**
+🏆 <b>Топ пользователей:</b>
 """
             
             for i, user in enumerate(stats['top_users'], 1):
-                message += f"{i}. {user['name']} - {user['entries_count']} записей\n"
+                # Экранируем имя пользователя для безопасного отображения
+                name_safe = user['name'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                message += f"{i}. {name_safe} - {user['entries_count']} записей\n"
             
             if not stats['top_users']:
                 message += "Нет активных пользователей\n"
             
             message += f"""
 
-🔧 **Админские команды:**
+🔧 <b>Админские команды:</b>
 /adminusers - список пользователей
 /adminuser [ID] - информация о пользователе
 /adminexport - экспорт данных
@@ -402,7 +404,7 @@ class CalorieBotHandlers:
             
             await update.message.reply_text(
                 message, 
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
             
         except Exception as e:
@@ -424,7 +426,8 @@ class CalorieBotHandlers:
                 await update.message.reply_text("📝 Пользователей пока нет")
                 return
             
-            message = f"👥 **Все пользователи ({len(users)}):**\n\n"
+            # Используем HTML вместо Markdown для лучшей совместимости
+            message = f"👥 <b>Все пользователи ({len(users)}):</b>\n\n"
             
             for i, user_info in enumerate(users[:15], 1):  # Показываем только первых 15
                 name = user_info['name']
@@ -439,8 +442,12 @@ class CalorieBotHandlers:
                 else:
                     activity = "неактивен"
                 
-                message += f"{i}. **{name}** ({username})\n"
-                message += f"   ID: `{user_info['telegram_id']}` • {entries} записей • цель {goal} ккал\n"
+                # Экранируем HTML символы
+                name_escaped = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                username_escaped = username.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                
+                message += f"{i}. <b>{name_escaped}</b> ({username_escaped})\n"
+                message += f"   ID: <code>{user_info['telegram_id']}</code> • {entries} записей • цель {goal} ккал\n"
                 message += f"   Активность: {activity}\n\n"
             
             if len(users) > 15:
@@ -450,7 +457,7 @@ class CalorieBotHandlers:
             
             await update.message.reply_text(
                 message, 
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
             
         except Exception as e:
@@ -479,29 +486,33 @@ class CalorieBotHandlers:
             
             user_obj = user_info['user']
             
+            # Экранируем данные для безопасного отображения в HTML
+            name_safe = (user_obj.first_name or 'Неизвестно').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            username_safe = (user_obj.username or 'нет').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            
             message = f"""
-🔍 **Детальная информация о пользователе**
+🔍 <b>Детальная информация о пользователе</b>
 
-👤 **Основные данные:**
-• Имя: {user_obj.first_name or 'Неизвестно'}
-• Username: @{user_obj.username or 'нет'}
-• Telegram ID: `{user_obj.telegram_id}`
+👤 <b>Основные данные:</b>
+• Имя: {name_safe}
+• Username: @{username_safe}
+• Telegram ID: <code>{user_obj.telegram_id}</code>
 • Дата регистрации: {user_obj.created_at.strftime('%d.%m.%Y %H:%M')}
 
-⚙️ **Настройки:**
+⚙️ <b>Настройки:</b>
 • Цель калорий: {user_obj.daily_calorie_goal} ккал/день
 • Вес: {user_obj.weight or 'не указан'} {'кг' if user_obj.weight else ''}
 • Рост: {user_obj.height or 'не указан'} {'см' if user_obj.height else ''}
 • Возраст: {user_obj.age or 'не указан'} {'лет' if user_obj.age else ''}
 • Пол: {('мужской' if user_obj.gender == 'male' else 'женский') if user_obj.gender else 'не указан'}
 
-📊 **Статистика:**
+📊 <b>Статистика:</b>
 • Всего записей: {user_info['total_entries']}
 • Дней с записями: {user_info['unique_days']}
 • Всего калорий: {user_info['total_calories']:.0f} ккал
 • Среднее в день: {user_info['avg_calories_per_day']:.0f} ккал
 
-🕒 **Последние записи:**
+🕒 <b>Последние записи:</b>
 """
             
             for entry in user_info['recent_entries']:
@@ -514,7 +525,7 @@ class CalorieBotHandlers:
             
             await update.message.reply_text(
                 message, 
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
             
         except ValueError:
@@ -571,7 +582,6 @@ class CalorieBotHandlers:
             # Отправляем файл
             csv_content = csv_data.getvalue().encode('utf-8')
             
-            from datetime import datetime
             filename = f"users_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             
             await update.message.reply_document(
@@ -584,6 +594,32 @@ class CalorieBotHandlers:
             await update.message.reply_text(f"❌ Ошибка экспорта данных: {e}")
             import traceback
             logger.error(f"Ошибка admin_export: {traceback.format_exc()}")
+
+    @staticmethod
+    async def admin_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /admintest - простой тест админского доступа"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        # Простое тестовое сообщение без сложного форматирования
+        message = f"""🧪 ТЕСТ АДМИНСКОЙ ПАНЕЛИ
+
+✅ Доступ предоставлен!
+👤 Ваш ID: {user.id}
+📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+
+🔧 Основные команды работают:
+• /adminstats - общая статистика
+• /adminusers - список пользователей  
+• /adminuser [ID] - инфо о пользователе
+• /adminexport - экспорт данных
+
+✨ Все готово для использования!"""
+        
+        await update.message.reply_text(message)
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1541,6 +1577,7 @@ def main():
     application.add_handler(CommandHandler("adminusers", CalorieBotHandlers.admin_users_command))
     application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
+    application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))
