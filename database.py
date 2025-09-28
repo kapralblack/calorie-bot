@@ -1,7 +1,7 @@
 """
 Модель базы данных для телеграм-бота подсчета калорий
 """
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, func
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, func, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timezone, timedelta
@@ -14,7 +14,7 @@ class User(Base):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True, nullable=False)
+    telegram_id = Column(BigInteger, unique=True, nullable=False)
     username = Column(String(255))
     first_name = Column(String(255))
     last_name = Column(String(255))
@@ -130,6 +130,9 @@ class DatabaseManager:
     def get_or_create_user(telegram_id, username=None, first_name=None, last_name=None):
         """Получить или создать пользователя с полной загрузкой настроек"""
         db = SessionLocal()
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             
@@ -145,9 +148,6 @@ class DatabaseManager:
                 db.commit()
                 db.refresh(user)
                 
-                # Логируем создание нового пользователя
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.info(f"Создан новый пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
             else:
                 # Обновляем данные существующего пользователя
@@ -166,12 +166,52 @@ class DatabaseManager:
                     db.commit()
                     db.refresh(user)
                 
-                # Логируем загрузку существующего пользователя
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.info(f"Загружен пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
                 
             return user
+        except Exception as e:
+            # Обработка ошибок базы данных, включая integer out of range
+            db.rollback()
+            logger.error(f"Ошибка при работе с пользователем {telegram_id}: {e}")
+            
+            # Если это ошибка integer out of range, пытаемся использовать альтернативную схему
+            if "integer out of range" in str(e).lower() or "numericvalueoutofrange" in str(type(e).__name__).lower():
+                logger.error(f"Telegram ID {telegram_id} слишком большой для текущей схемы базы данных")
+                logger.error("Требуется миграция схемы: telegram_id INTEGER → BIGINT")
+                
+                # Создаем фиктивного пользователя с базовыми настройками для продолжения работы
+                class TempUser:
+                    def __init__(self):
+                        self.id = None
+                        self.telegram_id = telegram_id
+                        self.username = username
+                        self.first_name = first_name  
+                        self.last_name = last_name
+                        self.daily_calorie_goal = 2000
+                        self.weight = None
+                        self.height = None
+                        self.age = None
+                        self.gender = None
+                        self.activity_level = 'moderate'
+                        
+                return TempUser()
+            
+            # Для других ошибок создаем базового пользователя
+            class TempUser:
+                def __init__(self):
+                    self.id = None
+                    self.telegram_id = telegram_id
+                    self.username = username
+                    self.first_name = first_name
+                    self.last_name = last_name  
+                    self.daily_calorie_goal = 2000
+                    self.weight = None
+                    self.height = None
+                    self.age = None
+                    self.gender = None
+                    self.activity_level = 'moderate'
+            
+            return TempUser()
         finally:
             db.close()
     
