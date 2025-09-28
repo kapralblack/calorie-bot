@@ -105,7 +105,7 @@ class DatabaseManager:
     @staticmethod
     def get_or_create_user(telegram_id, username=None, first_name=None, last_name=None):
         """Получить или создать пользователя с полной загрузкой настроек"""
-        db = get_db()
+        db = SessionLocal()
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             
@@ -155,7 +155,7 @@ class DatabaseManager:
     def add_food_entry(user_id, food_data, total_calories, total_proteins=0, total_carbs=0, total_fats=0, 
                       confidence=0, meal_type=None, photo_id=None):
         """Добавить запись о еде"""
-        db = get_db()
+        db = SessionLocal()
         try:
             entry = FoodEntry(
                 user_id=user_id,
@@ -182,7 +182,7 @@ class DatabaseManager:
     @staticmethod
     def _update_daily_stats(user_id, date):
         """Обновить дневную статистику"""
-        db = get_db()
+        db = SessionLocal()
         try:
             # Получаем все записи за день
             entries = db.query(FoodEntry).filter(
@@ -226,7 +226,7 @@ class DatabaseManager:
     @staticmethod
     def get_user_stats(user_id, days=7):
         """Получить статистику пользователя за последние N дней"""
-        db = get_db()
+        db = SessionLocal()
         try:
             from datetime import timedelta
             end_date = datetime.now().date()
@@ -262,7 +262,7 @@ class DatabaseManager:
     def update_user_settings(user_id, daily_calorie_goal=None, weight=None, height=None, 
                            age=None, gender=None, activity_level=None):
         """Обновить настройки пользователя"""
-        db = get_db()
+        db = SessionLocal()
         try:
             user = db.query(User).filter(User.id == user_id).first()
             if user:
@@ -297,7 +297,7 @@ class DatabaseManager:
     @staticmethod  
     def get_user_info(telegram_id):
         """Получить подробную информацию о пользователе"""
-        db = get_db()
+        db = SessionLocal()
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             if not user:
@@ -323,7 +323,7 @@ class DatabaseManager:
     @staticmethod
     def force_update_user_goal(telegram_id, new_goal):
         """Принудительно обновить цель пользователя по telegram_id"""
-        db = get_db()
+        db = SessionLocal()
         try:
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             if user:
