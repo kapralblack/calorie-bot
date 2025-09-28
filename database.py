@@ -1,10 +1,10 @@
 """
 Модель базы данных для телеграм-бота подсчета калорий
 """
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import config
 
 Base = declarative_base()
@@ -347,7 +347,7 @@ class DatabaseManager:
         try:
             # Сегодняшние калории
             today = datetime.now(timezone.utc).date()
-            today_calories = db.query(func.sum(FoodEntry.calories)).filter(
+            today_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
                 FoodEntry.user_id == user_id,
                 func.date(FoodEntry.created_at) == today
             ).scalar() or 0
