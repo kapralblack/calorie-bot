@@ -172,8 +172,16 @@ class CalorieAnalyzer:
         try:
             logger.info("Начинаем анализ изображения")
             
+            # Проверяем API ключ в самом начале
+            if not config.OPENAI_API_KEY:
+                logger.error("OPENAI_API_KEY не установлен")
+                return self._create_fallback_result("API ключ не найден")
+            
             # Проверяем размер изображения
             logger.info(f"Размер исходного изображения: {len(image_bytes)} байт")
+            if len(image_bytes) == 0:
+                logger.error("Пустое изображение")
+                return self._create_fallback_result("Пустое изображение")
             
             # Изменяем размер изображения
             resized_image = self.resize_image(image_bytes)
@@ -182,11 +190,6 @@ class CalorieAnalyzer:
             # Кодируем изображение
             base64_image = self.encode_image(resized_image)
             logger.info(f"Длина base64 строки: {len(base64_image)} символов")
-            
-            # Проверяем API ключ
-            if not config.OPENAI_API_KEY:
-                raise ValueError("OPENAI_API_KEY не установлен")
-            logger.info("API ключ OpenAI найден")
             
             # Отправляем запрос к OpenAI
             logger.info("Отправляем запрос к OpenAI API...")
@@ -218,24 +221,26 @@ class CalorieAnalyzer:
             
             # Парсим ответ
             content = response.choices[0].message.content
+            if not content:
+                logger.error("Пустой ответ от OpenAI")
+                return self._create_fallback_result("Пустой ответ от API")
+                
             logger.info(f"AI ответ длиной {len(content)} символов: {content[:200]}...")
             
             # Пытаемся извлечь JSON из ответа
             result = self._parse_ai_response(content)
-            logger.info("JSON успешно распарсен")
+            logger.info("Анализ завершен успешно")
             
             return result
             
         except Exception as e:
             import traceback
-            logger.error(f"ПОЛНАЯ ОШИБКА при анализе изображения: {e}")
-            logger.error(f"Трассировка: {traceback.format_exc()}")
-            return {
-                "food_items": [],
-                "total_calories": 0,
-                "confidence": 0,
-                "error": f"Ошибка анализа: {str(e)}"
-            }
+            error_details = traceback.format_exc()
+            logger.error(f"КРИТИЧЕСКАЯ ОШИБКА при анализе изображения: {e}")
+            logger.error(f"Полная трассировка: {error_details}")
+            
+            # Возвращаем fallback результат вместо ошибки
+            return self._create_fallback_result(f"Системная ошибка: {str(e)}")
 
     def _parse_ai_response(self, content):
         """Парсинг ответа AI с улучшенной обработкой ошибок"""

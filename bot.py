@@ -216,7 +216,8 @@ class CalorieBotHandlers:
             # Анализируем с помощью AI
             result = await analyzer.analyze_food_image(image_data)
             
-            if result.get('error'):
+            # Показываем ошибку только если совсем ничего не найдено
+            if result.get('error') and result.get('total_calories', 0) == 0:
                 await analyzing_message.edit_text(
                     f"{config.EMOJIS['error']} Произошла ошибка при анализе: {result['error']}\n\nПопробуйте еще раз или отправьте другое фото."
                 )
