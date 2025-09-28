@@ -20,6 +20,23 @@ if not OPENAI_API_KEY:
 # Database Configuration
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///calorie_bot.db')
 
+# Логирование информации о базе данных
+def log_database_info():
+    """Логирование информации о подключении к базе данных"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    if DATABASE_URL.startswith('postgresql'):
+        # Скрываем пароль в логах для безопасности
+        safe_url = DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else DATABASE_URL
+        logger.info(f"🐘 Используется PostgreSQL: {safe_url}")
+        logger.info("✅ Данные пользователей будут сохраняться между перезапусками")
+    elif DATABASE_URL.startswith('sqlite'):
+        logger.warning("⚠️ Используется SQLite - данные будут сбрасываться при деплое!")
+        logger.warning("💡 Настройте PostgreSQL в Railway для постоянного хранения")
+    else:
+        logger.info(f"🔍 Используется база данных: {DATABASE_URL[:20]}...")
+
 # Bot Configuration
 BOT_NAME = os.getenv('BOT_NAME', 'Калории Бот 🍎')
 ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', '')
@@ -40,15 +57,30 @@ You are a professional nutritionist with expertise in food identification. Analy
 
 CRITICAL FOOD IDENTIFICATION RULES:
 1. LOOK CAREFULLY at shape, texture, color, and cooking method
-2. DISTINGUISH clearly between different food categories:
+2. EXAMINE COMPLEX DISHES: Look for multiple layers, fillings, and hidden ingredients
+3. DISTINGUISH clearly between different food categories:
    - MEAT: beef steak, pork chop, chicken breast, ground meat, sausages
-   - FISH: salmon, tuna, cod, fried fish, fish fillet
+   - FISH: salmon, tuna, cod, fried fish, fish fillet  
    - BREAD: white bread, rye bread, toast, rolls, sandwiches
    - VEGETABLES: potatoes, carrots, salad, tomatoes, onions
    - GRAINS: rice, pasta, cereals, porridge
    - DAIRY: cheese, milk, yogurt, butter
    - BEVERAGES: tea, coffee, juice, water, soda
    - SWEETS: cookies, cake, chocolate, candy
+
+COMPLEX DISH ANALYSIS:
+For layered/composite dishes (casseroles, pies, gratins, stuffed items):
+1. IDENTIFY ALL VISIBLE COMPONENTS: Don't reduce complex dishes to single ingredients
+2. ANALYZE LAYERS: Top layer (cheese, crust), middle layer (filling), bottom layer (base)
+3. RECOGNIZE MIXED INGREDIENTS: In casseroles and pies, identify meat, vegetables, sauce, cheese
+4. ESTIMATE PROPORTIONS: If you see cheese on top of meat filling, include BOTH components
+5. COMMON COMPLEX DISHES:
+   - Meat casserole = ground meat + vegetables + cheese topping
+   - Quiche/pie = egg filling + vegetables/meat + pastry crust
+   - Gratin = vegetables + cream sauce + cheese topping
+   - Stuffed items = main item + filling ingredients
+
+NEVER simplify complex dishes to just one ingredient!
 
 WEIGHT ESTIMATION METHODOLOGY:
 1. Identify the PRIMARY FOOD TYPE first (what is this item?)
@@ -64,6 +96,13 @@ COMMON FOOD WEIGHTS:
 - Cooked rice (1 cup) ≈ 200g
 - Potato (medium) ≈ 150-200g
 - Tea/coffee cup ≈ 200-250ml
+
+COMPLEX DISH WEIGHTS:
+- Meat casserole portion ≈ 300-500g (meat 200g + vegetables 100g + cheese 50g + sauce 50g)
+- Quiche slice ≈ 150-250g (pastry 50g + egg filling 100g + cheese/meat 50g)  
+- Gratin portion ≈ 200-350g (vegetables 200g + cream sauce 100g + cheese 50g)
+- Stuffed pepper ≈ 200-300g (pepper 100g + meat/rice filling 150g)
+- Pie slice ≈ 150-300g (crust 50g + filling varies 100-250g)
 
 NAMING REQUIREMENTS:
 - BE SPECIFIC: "grilled beef steak" not just "meat"
@@ -89,7 +128,17 @@ RESPONSE FORMAT - strict JSON:
     "analysis_notes": "detailed identification reasoning"
 }
 
-CRITICAL: Identify food type FIRST, then estimate weight. Never confuse different food categories!
+CRITICAL REQUIREMENTS:
+1. Identify food type FIRST, then estimate weight
+2. Never confuse different food categories!  
+3. For complex/layered dishes: LIST ALL VISIBLE COMPONENTS separately
+4. Example: If you see cheese on top of meat filling, report BOTH "baked cheese topping 50g" AND "ground meat filling 200g"
+5. NEVER reduce complex dishes to just one ingredient (e.g., meat casserole ≠ just "cheese")
+
+ANALYSIS EXAMPLE FOR COMPLEX DISHES:
+- Visible: Golden cheese layer on top, meat/vegetable filling visible in cross-section
+- Report: ["baked cheese topping", "ground meat with vegetables", "pastry base"] 
+- NOT just: ["cheese"]
 """
 
 # Эмодзи для интерфейса

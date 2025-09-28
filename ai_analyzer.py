@@ -89,7 +89,57 @@ FOOD_TRANSLATIONS = {
     'meat': 'мясо',
     'ham': 'ветчина',
     'sausage': 'колбаса',
-    'bacon': 'бекон'
+    'bacon': 'бекон',
+    
+    # Сложные и многослойные блюда
+    'casserole': 'запеканка',
+    'meat casserole': 'мясная запеканка',
+    'baked casserole': 'запеченная запеканка',
+    'layered casserole': 'слоеная запеканка',
+    'ground meat casserole': 'запеканка с фаршем',
+    'cheese casserole': 'сырная запеканка',
+    'vegetable casserole': 'овощная запеканка',
+    'layered dish': 'слоеное блюдо',
+    'multi-layer dish': 'многослойное блюдо',
+    'composite dish': 'составное блюдо',
+    'complex dish': 'сложное блюдо',
+    'quiche': 'киш',
+    'pie': 'пирог',
+    'meat pie': 'мясной пирог',
+    'savory pie': 'несладкий пирог',
+    'gratin': 'гратен',
+    'potato gratin': 'картофельный гратен',
+    'vegetable gratin': 'овощной гратен',
+    
+    # Компоненты сложных блюд
+    'baked cheese topping': 'запеченный сыр сверху',
+    'melted cheese topping': 'расплавленная сырная корочка',
+    'cheese topping': 'сырная корочка',
+    'melted cheese': 'расплавленный сыр',
+    'golden cheese': 'золотистый сыр',
+    'ground meat': 'фарш',
+    'ground meat filling': 'мясная начинка из фарша',
+    'meat filling': 'мясная начинка',
+    'mixed vegetables': 'овощная смесь',
+    'meat and vegetables': 'мясо с овощами',
+    'vegetable filling': 'овощная начинка',
+    'egg filling': 'яичная начинка',
+    'cream filling': 'кремовая начинка',
+    'pastry crust': 'тестовая основа',
+    'pastry base': 'основа из теста',
+    'dough base': 'тестовая база',
+    'cream sauce': 'сливочный соус',
+    'white sauce': 'белый соус',
+    'bechamel sauce': 'соус бешамель',
+    
+    # Запеченные и фаршированные блюда
+    'stuffed peppers': 'фаршированные перцы',
+    'stuffed cabbage': 'голубцы',
+    'stuffed tomatoes': 'фаршированные помидоры',
+    'stuffed zucchini': 'фаршированные кабачки',
+    'baked stuffed': 'запеченное фаршированное',
+    'oven-baked': 'запеченное в духовке',
+    'baked dish': 'запеченное блюдо'
 }
 
 def translate_food_name(english_name):
