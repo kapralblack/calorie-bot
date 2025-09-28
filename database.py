@@ -211,9 +211,11 @@ class DatabaseManager:
         logger = logging.getLogger(__name__)
         
         try:
+            logger.info(f"👤 GET_OR_CREATE_USER: Ищем/создаем пользователя {telegram_id}")
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
             
             if not user:
+                logger.info(f"🆕 СОЗДАЕМ НОВОГО пользователя {telegram_id}")
                 user = User(
                     telegram_id=telegram_id,
                     username=username,
@@ -225,8 +227,11 @@ class DatabaseManager:
                 db.commit()
                 db.refresh(user)
                 
-                logger.info(f"Создан новый пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
+                logger.info(f"✅ НОВЫЙ ПОЛЬЗОВАТЕЛЬ создан: ID={user.id}, telegram_id={user.telegram_id}, цель={user.daily_calorie_goal} ккал")
             else:
+                logger.info(f"📋 НАЙДЕН СУЩЕСТВУЮЩИЙ пользователь: ID={user.id}, telegram_id={user.telegram_id}")
+                logger.info(f"📊 Текущие данные: вес={user.weight}, рост={user.height}, возраст={user.age}, цель={user.daily_calorie_goal} ккал")
+                
                 # Обновляем данные существующего пользователя
                 updated = False
                 if username and user.username != username:
@@ -242,19 +247,22 @@ class DatabaseManager:
                 if updated:
                     db.commit()
                     db.refresh(user)
+                    logger.info(f"✅ Данные пользователя обновлены")
                 
-                logger.info(f"Загружен пользователь {telegram_id} с целью {user.daily_calorie_goal} ккал")
+                logger.info(f"✅ ПОЛЬЗОВАТЕЛЬ ГОТОВ: ID={user.id}, тип={type(user).__name__}, цель={user.daily_calorie_goal} ккал")
                 
             return user
         except Exception as e:
             # Обработка ошибок базы данных, включая integer out of range
             db.rollback()
-            logger.error(f"Ошибка при работе с пользователем {telegram_id}: {e}")
+            logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА при работе с пользователем {telegram_id}: {e}")
+            logger.error(f"🚨 Тип ошибки: {type(e).__name__}")
             
             # Если это ошибка integer out of range, пытаемся использовать альтернативную схему
             if "integer out of range" in str(e).lower() or "numericvalueoutofrange" in str(type(e).__name__).lower():
-                logger.error(f"Telegram ID {telegram_id} слишком большой для текущей схемы базы данных")
-                logger.error("Требуется миграция схемы: telegram_id INTEGER → BIGINT")
+                logger.error(f"💥 Telegram ID {telegram_id} слишком большой для текущей схемы базы данных")
+                logger.error("💥 Требуется миграция схемы: telegram_id INTEGER → BIGINT")
+                logger.warning(f"⚠️ СОЗДАЕМ ВРЕМЕННОГО ПОЛЬЗОВАТЕЛЯ для {telegram_id} - ДАННЫЕ НЕ БУДУТ СОХРАНЯТЬСЯ!")
                 
                 # Создаем фиктивного пользователя с базовыми настройками для продолжения работы
                 class TempUser:
@@ -290,6 +298,7 @@ class DatabaseManager:
                 return TempUser()
             
             # Для других ошибок создаем базового пользователя
+            logger.warning(f"⚠️ СОЗДАЕМ ВРЕМЕННОГО ПОЛЬЗОВАТЕЛЯ для {telegram_id} из-за ошибки БД - ДАННЫЕ НЕ БУДУТ СОХРАНЯТЬСЯ!")
             class TempUser:
                 def __init__(self):
                     self.id = None
@@ -809,47 +818,103 @@ class DatabaseManager:
         db = SessionLocal()
         
         try:
-            logger.info(f"Начинаем онбординг для пользователя {telegram_id}")
-            logger.info(f"Данные: вес={weight}, рост={height}, возраст={age}, пол={gender}, активность={activity_level}")
+            logger.info(f"🚀 НАЧИНАЕМ ОНБОРДИНГ для пользователя {telegram_id}")
+            logger.info(f"📊 Входные данные: вес={weight}кг, рост={height}см, возраст={age}лет, пол={gender}, активность={activity_level}")
             
+            # Подробная диагностика поиска пользователя
+            logger.info(f"🔍 Ищем пользователя {telegram_id} в базе данных...")
             user = db.query(User).filter(User.telegram_id == telegram_id).first()
+            
             if not user:
-                logger.error(f"Пользователь {telegram_id} не найден в базе данных")
+                logger.error(f"❌ Пользователь {telegram_id} НЕ НАЙДЕН в базе данных!")
+                logger.info(f"📋 Проверим всех пользователей в БД:")
+                all_users = db.query(User).all()
+                for u in all_users[:5]:  # Показать первых 5
+                    logger.info(f"   📝 Найден пользователь: telegram_id={u.telegram_id}, имя={u.first_name}")
+                if len(all_users) > 5:
+                    logger.info(f"   📝 ... и еще {len(all_users) - 5} пользователей")
                 return False
+            
+            logger.info(f"✅ Пользователь НАЙДЕН: ID={user.id}, telegram_id={user.telegram_id}, имя={user.first_name}")
+            logger.info(f"🔍 Тип объекта пользователя: {type(user).__name__}")
+            logger.info(f"🔍 Модуль объекта: {type(user).__module__}")
             
             # Проверяем, является ли это настоящим пользователем из БД
-            if not hasattr(user, 'id') or user.id is None:
-                logger.error(f"Пользователь {telegram_id} является временным, не может быть сохранен")
+            if not hasattr(user, 'id'):
+                logger.error(f"❌ У пользователя {telegram_id} НЕТ АТРИБУТА 'id'!")
+                logger.info(f"🔍 Доступные атрибуты: {[attr for attr in dir(user) if not attr.startswith('_')]}")
+                return False
+                
+            if user.id is None:
+                logger.error(f"❌ Пользователь {telegram_id} имеет id=None (временный пользователь)")
                 return False
             
-            # Обновляем данные пользователя
-            logger.info(f"Обновляем данные пользователя {telegram_id}")
-            user.weight = float(weight)
-            user.height = float(height) 
-            user.age = int(age)
-            user.gender = str(gender).lower()
-            user.activity_level = str(activity_level)
+            logger.info(f"✅ Пользователь ВАЛИДЕН для сохранения: ID={user.id}")
             
-            logger.info(f"Данные установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
+            # Обновляем данные пользователя  
+            logger.info(f"📝 ОБНОВЛЯЕМ ДАННЫЕ пользователя {telegram_id}")
+            logger.info(f"🔍 Текущие данные ДО обновления: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
             
-            # Примечание: onboarding_completed временно отключено для совместимости
-            # Завершенность онбординга определяется наличием основных данных
+            try:
+                user.weight = float(weight)
+                user.height = float(height) 
+                user.age = int(age)
+                user.gender = str(gender).lower()
+                user.activity_level = str(activity_level)
+                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
+            except Exception as set_error:
+                logger.error(f"❌ ОШИБКА при установке данных: {set_error}")
+                raise set_error
+            
+            # Проверяем что данные реально изменились
+            logger.info(f"🔍 Проверяем изменения в объекте пользователя...")
+            logger.info(f"   📊 user.weight: {user.weight} (тип: {type(user.weight)})")
+            logger.info(f"   📊 user.height: {user.height} (тип: {type(user.height)})")
+            logger.info(f"   📊 user.age: {user.age} (тип: {type(user.age)})")
+            logger.info(f"   📊 user.gender: {user.gender} (тип: {type(user.gender)})")
+            logger.info(f"   📊 user.activity_level: {user.activity_level} (тип: {type(user.activity_level)})")
             
             # Рассчитываем персональную норму калорий
+            logger.info(f"🧮 РАССЧИТЫВАЕМ дневную норму калорий для пользователя {telegram_id}")
             try:
-                logger.info(f"Начинаем расчет дневной нормы калорий для пользователя {telegram_id}")
                 calculated_goal = user.calculate_daily_calorie_goal()
-                logger.info(f"Рассчитанная норма калорий: {calculated_goal}")
+                logger.info(f"✅ УСПЕШНО рассчитана норма калорий: {calculated_goal}")
                 user.daily_calorie_goal = calculated_goal
+                logger.info(f"✅ УСТАНОВЛЕНА цель калорий: {user.daily_calorie_goal}")
             except Exception as calc_error:
-                logger.error(f"Ошибка при расчете калорий: {calc_error}")
+                logger.error(f"❌ ОШИБКА при расчете калорий: {calc_error}")
+                logger.error(f"❌ Тип ошибки: {type(calc_error).__name__}")
+                import traceback
+                logger.error(f"❌ Полный traceback: {traceback.format_exc()}")
                 # Устанавливаем значение по умолчанию
                 user.daily_calorie_goal = 2000
-                logger.info(f"Установлена норма калорий по умолчанию: {user.daily_calorie_goal}")
+                logger.info(f"⚠️ Установлена норма калорий по умолчанию: {user.daily_calorie_goal}")
             
-            logger.info(f"Сохраняем изменения в базу данных для пользователя {telegram_id}")
-            db.commit()
-            logger.info(f"✅ Онбординг завершен для пользователя {telegram_id}. Цель калорий: {user.daily_calorie_goal}")
+            # Проверяем что объект готов к сохранению
+            logger.info(f"🔍 ПРОВЕРЯЕМ готовность к сохранению:")
+            logger.info(f"   📝 user.id: {user.id}")
+            logger.info(f"   📝 user.telegram_id: {user.telegram_id}")
+            logger.info(f"   📝 user.daily_calorie_goal: {user.daily_calorie_goal}")
+            logger.info(f"   📝 Все основные поля заполнены: {bool(user.weight and user.height and user.age and user.gender)}")
+            
+            logger.info(f"💾 СОХРАНЯЕМ изменения в базу данных для пользователя {telegram_id}")
+            try:
+                db.commit()
+                logger.info(f"✅ COMMIT УСПЕШЕН! Изменения сохранены в БД")
+                
+                # Проверяем что данные реально сохранились  
+                logger.info(f"🔍 ПРОВЕРЯЕМ сохранение: перезагружаем пользователя из БД...")
+                db.refresh(user)
+                logger.info(f"✅ Данные после перезагрузки: weight={user.weight}, height={user.height}, age={user.age}, daily_calorie_goal={user.daily_calorie_goal}")
+                
+            except Exception as commit_error:
+                logger.error(f"❌ ОШИБКА при сохранении в БД: {commit_error}")
+                logger.error(f"❌ Тип ошибки: {type(commit_error).__name__}")
+                import traceback
+                logger.error(f"❌ Полный traceback: {traceback.format_exc()}")
+                raise commit_error
+            
+            logger.info(f"🎉 ОНБОРДИНГ ПОЛНОСТЬЮ ЗАВЕРШЕН для пользователя {telegram_id}. Цель калорий: {user.daily_calorie_goal}")
             return user.daily_calorie_goal
             
         except Exception as e:

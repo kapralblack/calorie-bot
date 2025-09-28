@@ -657,6 +657,82 @@ class CalorieBotHandlers:
         await update.message.reply_text(message)
 
     @staticmethod
+    async def debug_migration_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отладочная команда /debugmigration для проверки статуса миграции"""
+        if not CalorieBotHandlers.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Недостаточно прав")
+            return
+            
+        try:
+            import logging
+            from database import engine, User
+            
+            # Проверяем тип telegram_id в базе данных
+            with engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT data_type, is_nullable, column_default
+                    FROM information_schema.columns 
+                    WHERE table_name = 'users' 
+                    AND column_name = 'telegram_id'
+                """))
+                
+                row = result.fetchone()
+                if row:
+                    data_type, is_nullable, column_default = row
+                    status = f"""
+🔍 **СТАТУС МИГРАЦИИ telegram_id**
+
+📊 **Информация о поле:**
+• Тип данных: `{data_type}`
+• Nullable: {is_nullable}
+• По умолчанию: {column_default or 'NULL'}
+
+{'✅ МИГРАЦИЯ ВЫПОЛНЕНА - поддерживаются любые Telegram ID' if data_type == 'bigint' else '❌ МИГРАЦИЯ НЕ ВЫПОЛНЕНА - большие Telegram ID будут вызывать ошибки'}
+
+🎯 **Рекомендации:**
+{'''• Миграция успешна! Проблемы решены.''' if data_type == 'bigint' else '''• ТРЕБУЕТСЯ выполнить автоматическую миграцию
+• При следующем перезапуске бота миграция должна произойти автоматически'''}
+"""
+                else:
+                    status = "❌ Таблица users или поле telegram_id не найдено"
+                
+            # Тестируем создание пользователя с большим ID  
+            test_large_id = 9876543210  # Большой ID для теста
+            try:
+                from database import DatabaseManager
+                test_user = DatabaseManager.get_or_create_user(
+                    telegram_id=test_large_id, 
+                    username="test_large_id",
+                    first_name="TestUser"
+                )
+                
+                if hasattr(test_user, 'id') and test_user.id is not None:
+                    test_result = "✅ Большие Telegram ID поддерживаются"
+                    # Удаляем тестового пользователя
+                    try:
+                        from database import SessionLocal
+                        db = SessionLocal()
+                        real_test_user = db.query(User).filter(User.telegram_id == test_large_id).first()
+                        if real_test_user:
+                            db.delete(real_test_user)
+                            db.commit()
+                        db.close()
+                    except:
+                        pass
+                else:
+                    test_result = "⚠️ Большие Telegram ID создают временных пользователей"
+                    
+            except Exception as test_error:
+                test_result = f"❌ Ошибка при тесте большого ID: {test_error}"
+            
+            status += f"\n\n🧪 **Тест больших Telegram ID:**\n{test_result}"
+            
+            await update.message.reply_text(status, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при проверке миграции: {e}")
+
+    @staticmethod
     async def admin_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /admindebug - отладка timezone проблем"""
         user = update.effective_user
@@ -1231,6 +1307,11 @@ class CalorieBotHandlers:
         weight = context.user_data['onboarding_weight']
         
         # Завершаем онбординг и получаем рассчитанную норму калорий
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"🎯 BOT: Вызываем complete_onboarding для пользователя {user.id}")
+        logger.info(f"🎯 BOT: Данные: weight={weight}, height={height}, age={age}, gender={gender}, activity={activity_level}")
+        
         daily_calories = DatabaseManager.complete_onboarding(
             telegram_id=user.id,
             weight=weight,
@@ -1239,6 +1320,8 @@ class CalorieBotHandlers:
             gender=gender,
             activity_level=activity_level
         )
+        
+        logger.info(f"🎯 BOT: Результат complete_onboarding: {daily_calories} (тип: {type(daily_calories)})")
         
         if daily_calories:
             # Очищаем данные онбординга
@@ -2350,6 +2433,7 @@ def main():
     application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
+    application.add_handler(CommandHandler("debugmigration", CalorieBotHandlers.debug_migration_command))
     application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))
     application.add_handler(CommandHandler("admindb", CalorieBotHandlers.admin_db_command))
     
