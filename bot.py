@@ -102,6 +102,35 @@ class CalorieBotHandlers:
         )
     
     @staticmethod
+    async def test_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Тестовая команда для проверки OpenAI API"""
+        user = update.effective_user
+        
+        # Проверяем только админа (если указан)
+        if config.ADMIN_USER_ID and str(user.id) != config.ADMIN_USER_ID:
+            await update.message.reply_text("❌ Команда доступна только администратору")
+            return
+        
+        await update.message.reply_text("🔍 Тестируем OpenAI API...")
+        
+        try:
+            # Простой тестовый запрос
+            from ai_analyzer import analyzer
+            test_response = analyzer.client.chat.completions.create(
+                model=config.AI_MODEL,
+                messages=[{"role": "user", "content": "Ответь одним словом: 'работаю'"}],
+                max_tokens=10
+            )
+            
+            ai_response = test_response.choices[0].message.content
+            await update.message.reply_text(f"✅ OpenAI API работает: {ai_response}")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка OpenAI API: {str(e)}")
+            import traceback
+            logger.error(f"Ошибка тестирования OpenAI: {traceback.format_exc()}")
+    
+    @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
         help_message = f"""
@@ -998,6 +1027,7 @@ def main():
     application.add_handler(CommandHandler("settings", CalorieBotHandlers.settings_handler))
     application.add_handler(CommandHandler("profile", CalorieBotHandlers.profile_command))
     application.add_handler(CommandHandler("fixgoal", CalorieBotHandlers.fix_goal_command))
+    application.add_handler(CommandHandler("testai", CalorieBotHandlers.test_ai_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))

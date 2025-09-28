@@ -170,13 +170,26 @@ class CalorieAnalyzer:
             dict: Результат анализа с калориями и питательными веществами
         """
         try:
+            logger.info("Начинаем анализ изображения")
+            
+            # Проверяем размер изображения
+            logger.info(f"Размер исходного изображения: {len(image_bytes)} байт")
+            
             # Изменяем размер изображения
             resized_image = self.resize_image(image_bytes)
+            logger.info(f"Размер после изменения: {len(resized_image)} байт")
             
             # Кодируем изображение
             base64_image = self.encode_image(resized_image)
+            logger.info(f"Длина base64 строки: {len(base64_image)} символов")
+            
+            # Проверяем API ключ
+            if not config.OPENAI_API_KEY:
+                raise ValueError("OPENAI_API_KEY не установлен")
+            logger.info("API ключ OpenAI найден")
             
             # Отправляем запрос к OpenAI
+            logger.info("Отправляем запрос к OpenAI API...")
             response = self.client.chat.completions.create(
                 model=config.AI_MODEL,
                 messages=[
@@ -201,80 +214,148 @@ class CalorieAnalyzer:
                 temperature=0.1
             )
             
+            logger.info("Получен ответ от OpenAI API")
+            
             # Парсим ответ
             content = response.choices[0].message.content
-            logger.info(f"AI ответ: {content}")
+            logger.info(f"AI ответ длиной {len(content)} символов: {content[:200]}...")
             
             # Пытаемся извлечь JSON из ответа
             result = self._parse_ai_response(content)
+            logger.info("JSON успешно распарсен")
             
             return result
             
         except Exception as e:
-            logger.error(f"Ошибка при анализе изображения: {e}")
+            import traceback
+            logger.error(f"ПОЛНАЯ ОШИБКА при анализе изображения: {e}")
+            logger.error(f"Трассировка: {traceback.format_exc()}")
             return {
                 "food_items": [],
                 "total_calories": 0,
                 "confidence": 0,
-                "error": str(e)
+                "error": f"Ошибка анализа: {str(e)}"
             }
 
     def _parse_ai_response(self, content):
-        """Парсинг ответа AI"""
+        """Парсинг ответа AI с улучшенной обработкой ошибок"""
         try:
-            # Ищем JSON в ответе
-            start_idx = content.find('{')
-            end_idx = content.rfind('}') + 1
-
-            if start_idx != -1 and end_idx != 0:
-                json_str = content[start_idx:end_idx]
-                result = json.loads(json_str)
-
-                # Валидация результата
-                if not isinstance(result, dict):
-                    raise ValueError("Результат не является словарем")
-
-                # Проверяем обязательные поля
-                required_fields = ['food_items', 'total_calories', 'confidence']
-                for field in required_fields:
-                    if field not in result:
-                        result[field] = 0 if field != 'food_items' else []
-
-                # Убеждаемся, что food_items это список
-                if not isinstance(result['food_items'], list):
-                    result['food_items'] = []
-
-                # Вычисляем общие питательные вещества
-                total_proteins = sum(item.get('proteins', 0) for item in result['food_items'])
-                total_carbs = sum(item.get('carbs', 0) for item in result['food_items'])
-                total_fats = sum(item.get('fats', 0) for item in result['food_items'])
-
-                result['total_proteins'] = total_proteins
-                result['total_carbs'] = total_carbs
-                result['total_fats'] = total_fats
-
-                return result
-            else:
+            logger.info(f"Парсим ответ AI длиной {len(content)} символов")
+            
+            # Ищем JSON в ответе - проверяем разные варианты
+            json_patterns = [
+                (content.find('{'), content.rfind('}') + 1),  # Обычный поиск
+                (content.find('```json') + 7, content.find('```', content.find('```json') + 7)),  # Markdown JSON
+                (content.find('```') + 3, content.rfind('```')),  # Любой code block
+            ]
+            
+            result = None
+            for start_idx, end_idx in json_patterns:
+                if start_idx != -1 and end_idx > start_idx:
+                    try:
+                        json_str = content[start_idx:end_idx].strip()
+                        logger.info(f"Пытаемся парсить JSON: {json_str[:200]}...")
+                        result = json.loads(json_str)
+                        logger.info("JSON успешно распарсен")
+                        break
+                    except json.JSONDecodeError:
+                        continue
+            
+            if result is None:
+                logger.error("Не удалось найти валидный JSON в ответе")
                 raise ValueError("JSON не найден в ответе")
 
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.error(f"Ошибка парсинга ответа AI: {e}")
+            # Валидация результата
+            if not isinstance(result, dict):
+                raise ValueError("Результат не является словарем")
 
-            # Пытаемся извлечь хотя бы базовую информацию
-            return {
-                "food_items": [],
-                "total_calories": 0,
-                "total_proteins": 0,
-                "total_carbs": 0,
-                "total_fats": 0,
-                "confidence": 0,
-                "error": "Не удалось распознать еду на изображении",
-                "raw_response": content
-            }
+            # Проверяем обязательные поля с дефолтными значениями
+            result.setdefault('food_items', [])
+            result.setdefault('total_calories', 0)
+            result.setdefault('confidence', 50)
+
+            # Убеждаемся, что food_items это список
+            if not isinstance(result['food_items'], list):
+                logger.warning("food_items не является списком, исправляем")
+                result['food_items'] = []
+
+            # Валидируем каждый food_item
+            valid_items = []
+            for item in result['food_items']:
+                if isinstance(item, dict):
+                    # Устанавливаем дефолтные значения для каждого элемента
+                    item.setdefault('name', 'Неизвестный продукт')
+                    item.setdefault('estimated_weight', '100г')
+                    item.setdefault('calories', 100)
+                    item.setdefault('proteins', 5)
+                    item.setdefault('carbs', 10)
+                    item.setdefault('fats', 5)
+                    item.setdefault('certainty', 'medium')
+                    valid_items.append(item)
+            
+            result['food_items'] = valid_items
+
+            # Вычисляем общие питательные вещества
+            total_proteins = sum(item.get('proteins', 0) for item in result['food_items'])
+            total_carbs = sum(item.get('carbs', 0) for item in result['food_items'])
+            total_fats = sum(item.get('fats', 0) for item in result['food_items'])
+
+            result['total_proteins'] = total_proteins
+            result['total_carbs'] = total_carbs
+            result['total_fats'] = total_fats
+
+            # Если total_calories не указан или равен 0, вычисляем его
+            if result.get('total_calories', 0) == 0 and result['food_items']:
+                result['total_calories'] = sum(item.get('calories', 0) for item in result['food_items'])
+
+            logger.info(f"Итоговый результат: {result.get('total_calories', 0)} ккал, {len(result['food_items'])} продуктов")
+            return result
+
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error(f"КРИТИЧЕСКАЯ ошибка парсинга ответа AI: {e}")
+            logger.error(f"Исходный ответ: {content}")
+
+            # Создаем fallback результат на основе простого анализа
+            return self._create_fallback_result(content)
+
+    def _create_fallback_result(self, content):
+        """Создает fallback результат когда не удается распарсить ответ AI"""
+        logger.info("Создаем fallback результат")
+        
+        # Пытаемся найти упоминания еды в тексте
+        food_keywords = ['steak', 'meat', 'chicken', 'fish', 'bread', 'rice', 'potato', 'salad', 'food', 'meal']
+        found_foods = [word for word in food_keywords if word.lower() in content.lower()]
+        
+        if found_foods:
+            food_name = f"Еда ({', '.join(found_foods[:2])})"
+            calories_estimate = 400  # Средняя порция
+        else:
+            food_name = "Блюдо (не удалось распознать)"
+            calories_estimate = 350
+        
+        return {
+            "food_items": [{
+                "name": food_name,
+                "estimated_weight": "250г",
+                "calories": calories_estimate,
+                "proteins": 20,
+                "carbs": 25,
+                "fats": 15,
+                "certainty": "low"
+            }],
+            "total_calories": calories_estimate,
+            "total_proteins": 20,
+            "total_carbs": 25,
+            "total_fats": 15,
+            "confidence": 30,
+            "error": "Использован fallback анализ",
+            "raw_response": content[:300]
+        }
 
     def format_analysis_result(self, result):
         """Форматирование результата анализа для отображения пользователю"""
-        if result.get('confidence', 0) == 0 or result.get('total_calories', 0) == 0:
+        # Показываем предупреждение только если действительно ничего не найдено
+        if result.get('total_calories', 0) == 0:
             return f"{config.EMOJIS['warning']} Не удалось распознать еду на изображении.\n\nПопробуйте сделать более четкое фото блюда."
         
         # Заголовок
@@ -314,6 +395,10 @@ class CalorieAnalyzer:
             confidence_emoji = config.EMOJIS['error']
         
         message += f"\n{confidence_emoji} **Уверенность анализа:** {confidence:.0f}%"
+        
+        # Добавляем информацию об ошибках или fallback
+        if result.get('error') and confidence < 50:
+            message += f"\n\n⚠️ *Примечание: {result['error']}*"
         
         return message
 
