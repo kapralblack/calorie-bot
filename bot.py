@@ -32,6 +32,10 @@ class CalorieBotHandlers:
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
         user = update.effective_user
+        
+        # Сбрасываем флаг сохранения анализа при возврате в главное меню
+        context.user_data.pop('preserve_analysis_message', None)
+        
         telegram_user = DatabaseManager.get_or_create_user(
             telegram_id=user.id,
             username=user.username,
@@ -190,6 +194,9 @@ class CalorieBotHandlers:
         """Обработчик фотографий еды"""
         user = update.effective_user
         
+        # Сбрасываем флаг сохранения анализа при получении нового фото
+        context.user_data.pop('preserve_analysis_message', None)
+        
         # Получаем или создаем пользователя
         db_user = DatabaseManager.get_or_create_user(
             telegram_id=user.id,
@@ -259,6 +266,7 @@ class CalorieBotHandlers:
             # Сохраняем данные для коррекции
             context.user_data['last_photo_id'] = photo.file_id
             context.user_data['last_analysis_result'] = result
+            context.user_data['preserve_analysis_message'] = True  # Флаг для сохранения сообщения с анализом
             
             # Клавиатура с действиями
             keyboard = [
@@ -333,18 +341,33 @@ class CalorieBotHandlers:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if update.callback_query:
+        # Проверяем флаг сохранения сообщения с анализом фото
+        preserve_analysis = context.user_data.get('preserve_analysis_message', False)
+        
+        if update.callback_query and not preserve_analysis:
             await update.callback_query.edit_message_text(
                 message,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
             )
         else:
-            await update.message.reply_text(
-                message,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
+            # Если это callback после анализа фото или обычное сообщение - отправляем новое сообщение
+            if update.callback_query:
+                await update.callback_query.answer()  # Закрываем "часики" на кнопке
+                bot = update.callback_query.get_bot()
+                chat_id = update.callback_query.message.chat_id
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_text(
+                    message,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=reply_markup
+                )
     
     @staticmethod
     async def settings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -405,8 +428,12 @@ class CalorieBotHandlers:
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
         elif query.data == "add_more":
-            await query.edit_message_text(
-                f"{config.EMOJIS['food']} Отправьте фото следующего блюда для анализа калорий!"
+            await query.answer()
+            bot = query.get_bot()
+            chat_id = query.message.chat_id
+            await bot.send_message(
+                chat_id=chat_id,
+                text=f"{config.EMOJIS['food']} Отправьте фото следующего блюда для анализа калорий!"
             )
         elif query.data == "detailed_stats":
             await CalorieBotHandlers.detailed_stats_handler(update, context)
@@ -621,7 +648,13 @@ class CalorieBotHandlers:
         
         # Проверяем есть ли данные для коррекции
         if 'last_analysis_result' not in context.user_data:
-            await query.edit_message_text("❌ Нет данных для коррекции. Пошлите новое фото.")
+            await query.answer()
+            bot = query.get_bot()
+            chat_id = query.message.chat_id
+            await bot.send_message(
+                chat_id=chat_id,
+                text="❌ Нет данных для коррекции. Пошлите новое фото."
+            )
             return
         
         context.user_data['waiting_for'] = 'correction'
@@ -658,8 +691,13 @@ class CalorieBotHandlers:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            message,
+        # Отправляем новое сообщение, сохраняя исходный анализ
+        await query.answer()
+        bot = query.get_bot()
+        chat_id = query.message.chat_id
+        await bot.send_message(
+            chat_id=chat_id,
+            text=message,
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=reply_markup
         )
