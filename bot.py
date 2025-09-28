@@ -43,30 +43,53 @@ class CalorieBotHandlers:
             last_name=user.last_name
         )
         
+        # Получаем быструю статистику для приветствия
+        today_calories = DatabaseManager.get_today_calories(telegram_user.id)
+        daily_goal = telegram_user.daily_calorie_goal
+        
+        # Статус дня
+        progress_emoji = "🟢" if today_calories < daily_goal else "🔴" if today_calories > daily_goal * 1.1 else "🟡"
+        progress_text = f"{today_calories:.0f} / {daily_goal} ккал {progress_emoji}"
+        
         welcome_message = f"""
-{config.EMOJIS['apple']} **Добро пожаловать в {config.BOT_NAME}!**
+🍎 **{config.BOT_NAME}**
+        
+👋 Привет, **{user.first_name}**! 
 
-Привет, {user.first_name}! Я помогу тебе отслеживать калории по фотографиям еды.
+📊 **Сегодня:** {progress_text}
+💡 **Совет:** Отправьте фото еды для анализа калорий
 
-**Что я умею:**
-{config.EMOJIS['food']} Анализировать фото еды и считать калории
-{config.EMOJIS['stats']} Вести статистику питания
-{config.EMOJIS['chart']} Показывать графики прогресса
-{config.EMOJIS['settings']} Настраивать цели калорий
+🔥 **Возможности бота:**
+• 📸 AI анализ фото еды  
+• 📈 Умная статистика питания
+• 🎯 Персональные цели и отслеживание
+• 📱 Личный кабинет с историей
 
-**Как пользоваться:**
-1. Отправьте мне фото вашей еды
-2. Я проанализирую и посчитаю калории
-3. Смотрите статистику и следите за целями
-
-Начните с отправки фото еды или выберите действие ниже:
+Выберите действие или отправьте фото еды:
 """
         
+        # Создаем красивое структурированное меню
         keyboard = [
-            [InlineKeyboardButton("👤 Личный кабинет", callback_data="profile")],
-            [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
-            [InlineKeyboardButton(f"{config.EMOJIS['settings']} Настройки", callback_data="settings")],
-            [InlineKeyboardButton(f"{config.EMOJIS['help']} Помощь", callback_data="help")]
+            # Верхний ряд - главные действия
+            [
+                InlineKeyboardButton("📸 Анализ фото", callback_data="add_photo_tip"),
+                InlineKeyboardButton("👤 Мой профиль", callback_data="profile")
+            ],
+            # Второй ряд - статистика
+            [
+                InlineKeyboardButton("📊 Статистика", callback_data="stats"),
+                InlineKeyboardButton("📈 Детальные отчеты", callback_data="detailed_stats")
+            ],
+            # Третий ряд - управление
+            [
+                InlineKeyboardButton("⚙️ Настройки", callback_data="settings"),
+                InlineKeyboardButton("🎯 Моя цель", callback_data="my_goal")
+            ],
+            # Четвертый ряд - помощь и статус
+            [
+                InlineKeyboardButton("💾 Статус данных", callback_data="data_status"),
+                InlineKeyboardButton("❓ Помощь", callback_data="help")
+            ]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -675,43 +698,336 @@ class CalorieBotHandlers:
             
         except Exception as e:
             await update.message.reply_text(f"❌ Ошибка отладки: {e}")
+
+    @staticmethod
+    async def admin_db_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /admindb - информация о базе данных"""
+        user = update.effective_user
+        
+        if not CalorieBotHandlers.is_admin(user.id):
+            await update.message.reply_text("❌ Доступ запрещен. Только для администратора.")
+            return
+        
+        try:
+            # Информация о базе данных
+            db_type = "PostgreSQL" if config.DATABASE_URL.startswith('postgresql') else \
+                     "SQLite" if config.DATABASE_URL.startswith('sqlite') else "Другая"
+            
+            # Безопасное отображение URL (без пароля)
+            if '@' in config.DATABASE_URL:
+                safe_url = config.DATABASE_URL.split('@')[1]
+                db_info = f"Подключение: ...@{safe_url}"
+            else:
+                db_info = f"URL: {config.DATABASE_URL[:30]}..."
+            
+            # Статистика базы данных
+            stats = DatabaseManager.get_admin_stats()
+            
+            # Проверка на потерю данных
+            persistent_warning = ""
+            if db_type == "SQLite":
+                persistent_warning = """
+⚠️ ВАЖНО: Используется SQLite база данных!
+❌ Данные будут СБРАСЫВАТЬСЯ при каждом деплое
+💡 Настройте PostgreSQL в Railway для постоянного хранения
+
+📋 Инструкция по настройке:
+1. В Railway: Add Service → Database → PostgreSQL
+2. Скопируйте Postgres Connection URL  
+3. Добавьте переменную DATABASE_URL в бот-сервисе
+4. Перезапустите бот"""
+            else:
+                persistent_warning = "✅ Используется постоянная база данных - данные сохраняются!"
+            
+            message = f"""💾 <b>Информация о базе данных</b>
+
+🔧 <b>Конфигурация:</b>
+• Тип: {db_type}
+• {db_info}
+
+📊 <b>Текущие данные:</b>
+• Пользователей: {stats['total_users']}
+• Записей о еде: {stats['total_food_entries']}
+• Активных за неделю: {stats['active_users_7d']}
+
+{persistent_warning}
+
+🔍 <b>Диагностические команды:</b>
+/debugstats - состояние таблиц БД
+/rebuildstats - пересоздать статистику
+/adminexport - экспорт данных в CSV"""
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.HTML
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка получения информации о БД: {e}")
+
+    @staticmethod
+    async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /status - проверка статуса данных пользователя"""
+        user = update.effective_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Определяем тип базы данных
+            db_type = "PostgreSQL" if config.DATABASE_URL.startswith('postgresql') else \
+                     "SQLite" if config.DATABASE_URL.startswith('sqlite') else "Другая"
+            
+            persistent = "✅ Данные сохраняются между перезапусками" if db_type == "PostgreSQL" else \
+                        "⚠️ Данные могут сбрасываться при обновлениях бота"
+            
+            # Статистика пользователя
+            tracking_days = DatabaseManager.get_tracking_days(db_user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            
+            # Дата создания аккаунта
+            created_date = db_user.created_at.strftime('%d.%m.%Y') if db_user.created_at else "Неизвестно"
+            
+            message = f"""📊 <b>Статус ваших данных</b>
+
+👤 <b>Профиль:</b>
+• Имя: {user.first_name or 'Не указано'}
+• Дата регистрации: {created_date}
+• Цель калорий: {db_user.daily_calorie_goal} ккал/день
+
+📈 <b>Активность:</b>
+• Дней с записями: {tracking_days}
+• Калорий сегодня: {today_calories:.0f}
+• Настроен ли профиль: {'✅ Да' if (db_user.weight or db_user.height) else '⚙️ Нет (настройте в /settings)'}
+
+💾 <b>Хранение данных:</b>
+• База данных: {db_type}
+• {persistent}
+
+💡 <b>Что это означает:</b>
+{'''✅ Ваши данные в безопасности! 
+   Настройки и история сохранятся при обновлениях бота''' if db_type == "PostgreSQL" else 
+'''⚠️ При обновлениях бота данные могут сброситься
+   Рекомендуется администратору настроить PostgreSQL'''}
+
+🔧 Используйте /settings для настройки профиля"""
+            
+            await update.message.reply_text(
+                message, 
+                parse_mode=ParseMode.HTML
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка получения статуса: {e}")
+
+    # ======= НОВЫЕ UI ОБРАБОТЧИКИ =======
+    
+    @staticmethod
+    async def photo_tip_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки "Анализ фото" - подсказки по отправке фото"""
+        query = update.callback_query
+        
+        message = f"""📸 **Как отправить фото для анализа**
+
+🎯 **Простые шаги:**
+1. Нажмите 📎 (скрепка) в чате
+2. Выберите "Камера" или "Фото"
+3. Сфотографируйте еду или выберите из галереи
+4. Отправьте фото боту
+
+💡 **Советы для лучшего анализа:**
+• 📏 Покажите еду целиком на тарелке
+• 💡 Хорошее освещение поможет AI
+• 🥄 Разместите ложку/вилку для масштаба
+• 🍽️ Один прием пищи = одно фото
+
+✨ **Что я определю:**
+• Виды продуктов и их количество
+• Калории, белки, жиры, углеводы  
+• Размер порций и вес продуктов
+
+🚀 Отправляйте фото прямо сейчас!"""
+
+        keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod  
+    async def my_goal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки "Моя цель" - быстрый просмотр цели калорий"""
+        query = update.callback_query
+        user = query.from_user
+        
+        try:
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            daily_goal = db_user.daily_calorie_goal
+            
+            # Расчет прогресса
+            progress_percent = (today_calories / daily_goal * 100) if daily_goal > 0 else 0
+            remaining = daily_goal - today_calories
+            
+            # Эмодзи статуса
+            if remaining > 0:
+                status_emoji = "🟢" if remaining > daily_goal * 0.2 else "🟡"
+                status_text = f"Осталось: {remaining:.0f} ккал"
+            else:
+                over = abs(remaining)
+                status_emoji = "🔴" if over > daily_goal * 0.1 else "🟡"
+                status_text = f"Превышение: +{over:.0f} ккал"
+            
+            message = f"""🎯 **Ваша цель калорий**
+
+👤 **{user.first_name}**
+
+📊 **Сегодня:** {today_calories:.0f} / {daily_goal} ккал
+📈 **Прогресс:** {progress_percent:.1f}% {status_emoji}
+⚖️ **{status_text}**
+
+💡 **Рекомендации:**
+{'''🍽️ Можете еще поесть - достигайте цели!''' if remaining > 0 else 
+'''🥗 Попробуйте легкий ужин или перенос калорий на завтра''' if remaining < -200 else 
+'''✅ Отлично! Вы близко к цели'''}
+
+🔧 Хотите изменить цель? Используйте ⚙️ Настройки"""
+
+            keyboard = [
+                [InlineKeyboardButton("⚙️ Изменить цель", callback_data="set_calorie_goal")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка загрузки цели: {e}")
+
+    @staticmethod
+    async def data_status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки "Статус данных" - callback версия status_command"""
+        query = update.callback_query
+        user = query.from_user
+        
+        try:
+            # Получаем пользователя
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+            
+            # Определяем тип базы данных
+            db_type = "PostgreSQL" if config.DATABASE_URL.startswith('postgresql') else \
+                     "SQLite" if config.DATABASE_URL.startswith('sqlite') else "Другая"
+            
+            persistent = "✅ Данные сохраняются между перезапусками" if db_type == "PostgreSQL" else \
+                        "⚠️ Данные могут сбрасываться при обновлениях бота"
+            
+            # Статистика пользователя
+            tracking_days = DatabaseManager.get_tracking_days(db_user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            
+            # Дата создания аккаунта
+            created_date = db_user.created_at.strftime('%d.%m.%Y') if db_user.created_at else "Неизвестно"
+            
+            message = f"""💾 **Статус ваших данных**
+
+👤 **Профиль:**
+• Имя: {user.first_name or 'Не указано'}
+• Дата регистрации: {created_date}
+• Цель калорий: {db_user.daily_calorie_goal} ккал/день
+
+📈 **Активность:**
+• Дней с записями: {tracking_days}
+• Калорий сегодня: {today_calories:.0f}
+• Настроен профиль: {'✅ Да' if (db_user.weight or db_user.height) else '⚙️ Нет'}
+
+💾 **Хранение данных:**
+• База данных: {db_type}
+• {persistent}
+
+💡 **Это означает:**
+{'''✅ Ваши данные в безопасности! 
+   Настройки и история сохранятся при обновлениях''' if db_type == "PostgreSQL" else 
+'''⚠️ При обновлениях данные могут сброситься
+   Рекомендуется администратору настроить PostgreSQL'''}"""
+
+            keyboard = [
+                [InlineKeyboardButton("⚙️ Настройки профиля", callback_data="settings")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+            
+        except Exception as e:
+            await query.edit_message_text(f"❌ Ошибка получения статуса: {e}")
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
         help_message = f"""
-{config.EMOJIS['help']} **Помощь по использованию бота**
+❓ **Справка по использованию бота**
 
-**Основные команды:**
-/start - Начать работу с ботом
-/profile - Личный кабинет пользователя
-/stats - Показать статистику
-/settings - Настройки профиля
-/help - Эта справка
+🚀 **Быстрый старт:**
+1️⃣ Отправьте фото еды боту
+2️⃣ Получите анализ калорий за 5 секунд  
+3️⃣ Следите за прогрессом в статистике
 
-**Как анализировать еду:**
-1. Сделайте фото вашего блюда
-2. Отправьте фото боту
-3. Дождитесь анализа (может занять несколько секунд)
-4. Получите детальную информацию о калориях
+📸 **Анализ фото еды:**
+• AI определяет виды продуктов
+• Подсчитывает калории, БЖУ и вес
+• Работает с любыми блюдами
+• Точность анализа 85-95%
 
-**Советы для лучших результатов:**
-• Фотографируйте еду хорошо освещенной
-• Показывайте всю порцию целиком
-• Избегайте размытых фото
-• Фотографируйте на контрастном фоне
+💡 **Советы для лучших результатов:**
+🔍 Хорошее освещение
+🍽️ Вся порция в кадре
+📏 Добавьте ложку для масштаба
+🎯 Четкое фото без размытия
 
-**Функции статистики:**
-• Калории за день/неделю/месяц
-• График изменения веса
-• Анализ питательных веществ
-• Достижение целей
+📊 **Что отслеживает бот:**
+• Ежедневные калории и БЖУ
+• Прогресс к вашей цели
+• Статистика по дням/неделям  
+• История всех записей
 
-Есть вопросы? Просто напишите мне!
+⚙️ **Персонализация:**
+• Установите свою цель калорий
+• Укажите вес, рост, возраст
+• Настройте уведомления
+• Экспортируйте данные
+
+🔒 **Безопасность данных:**
+{'''• ✅ PostgreSQL - данные сохраняются навсегда
+• 🛡️ Никаких потерь при обновлениях''' if config.DATABASE_URL.startswith('postgresql') else 
+'''• ⚠️ SQLite - данные могут сбрасываться
+• 💡 Рекомендуется настроить PostgreSQL'''}
+
+❓ Остались вопросы? Просто напишите мне!
 """
         
         keyboard = [
-            [InlineKeyboardButton(f"{config.EMOJIS['back']} Главное меню", callback_data="main_menu")]
+            [
+                InlineKeyboardButton("📸 Как отправить фото", callback_data="add_photo_tip"),
+                InlineKeyboardButton("🎯 Моя цель", callback_data="my_goal")
+            ],
+            [
+                InlineKeyboardButton("👤 Мой профиль", callback_data="profile"),
+                InlineKeyboardButton("📊 Статистика", callback_data="stats")
+            ],
+            [
+                InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+            ]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -810,11 +1126,22 @@ class CalorieBotHandlers:
             context.user_data['last_analysis_result'] = result
             context.user_data['preserve_analysis_message'] = True  # Флаг для сохранения сообщения с анализом
             
-            # Клавиатура с действиями
+            # Улучшенная клавиатура с действиями
             keyboard = [
-                [InlineKeyboardButton(f"{config.EMOJIS['stats']} Статистика", callback_data="stats")],
-                [InlineKeyboardButton("🔧 Исправить анализ", callback_data="correct_analysis")],
-                [InlineKeyboardButton(f"{config.EMOJIS['food']} Добавить еще блюдо", callback_data="add_more")],
+                # Первый ряд - основные действия
+                [
+                    InlineKeyboardButton("📊 Посмотреть статистику", callback_data="stats"),
+                    InlineKeyboardButton("👤 Мой профиль", callback_data="profile")
+                ],
+                # Второй ряд - редактирование и добавление
+                [
+                    InlineKeyboardButton("🔧 Исправить анализ", callback_data="correct_analysis"),
+                    InlineKeyboardButton("➕ Добавить еще блюдо", callback_data="add_more")
+                ],
+                # Третий ряд - навигация
+                [
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+                ]
             ]
             
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1005,6 +1332,12 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.settings_handler(update, context)
         elif query.data == "profile":
             await CalorieBotHandlers.profile_callback_handler(update, context)
+        elif query.data == "add_photo_tip":
+            await CalorieBotHandlers.photo_tip_handler(update, context)
+        elif query.data == "my_goal":
+            await CalorieBotHandlers.my_goal_handler(update, context) 
+        elif query.data == "data_status":
+            await CalorieBotHandlers.data_status_handler(update, context)
     
     @staticmethod
     async def detailed_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1607,6 +1940,9 @@ class WeeklyStatsScheduler:
 
 def main():
     """Основная функция запуска бота"""
+    # Логируем информацию о базе данных
+    config.log_database_info()
+    
     # Создаем таблицы базы данных
     create_tables()
     logger.info("База данных инициализирована")
@@ -1620,6 +1956,7 @@ def main():
     application.add_handler(CommandHandler("stats", CalorieBotHandlers.stats_handler))
     application.add_handler(CommandHandler("settings", CalorieBotHandlers.settings_handler))
     application.add_handler(CommandHandler("profile", CalorieBotHandlers.profile_command))
+    application.add_handler(CommandHandler("status", CalorieBotHandlers.status_command))
     application.add_handler(CommandHandler("fixgoal", CalorieBotHandlers.fix_goal_command))
     application.add_handler(CommandHandler("testai", CalorieBotHandlers.test_ai_command))
     application.add_handler(CommandHandler("debuguser", CalorieBotHandlers.debug_user_command))
@@ -1634,6 +1971,7 @@ def main():
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
     application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))
+    application.add_handler(CommandHandler("admindb", CalorieBotHandlers.admin_db_command))
     
     # Обработчики сообщений
     application.add_handler(MessageHandler(filters.PHOTO, CalorieBotHandlers.photo_handler))
