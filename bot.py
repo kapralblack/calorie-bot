@@ -2424,9 +2424,42 @@ class WeeklyStatsScheduler:
 
 def main():
     """Основная функция запуска бота"""
+    logger.info("🚀 Инициализация бота начата...")
+    
     # Создаем таблицы базы данных
     create_tables()
-    logger.info("База данных инициализирована")
+    logger.info("📊 База данных инициализирована")
+    
+    # КРИТИЧЕСКИ ВАЖНО: Принудительно запускаем миграцию ПЕРЕД любыми операциями
+    logger.info("🔧 ЗАПУСКАЕМ КРИТИЧЕСКИ ВАЖНУЮ МИГРАЦИЮ telegram_id...")
+    try:
+        from database import migrate_telegram_id_if_needed, engine
+        migrate_telegram_id_if_needed()
+        
+        # Проверяем что миграция действительно выполнилась
+        try:
+            from sqlalchemy import text
+            with engine.connect() as connection:
+                result = connection.execute(text("""
+                    SELECT data_type 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'users' 
+                    AND column_name = 'telegram_id'
+                """))
+                row = result.fetchone()
+                if row and row[0] == 'bigint':
+                    logger.info("✅ ПОДТВЕРЖДЕНО: telegram_id успешно мигрирован на BIGINT")
+                    logger.info("✅ Большие Telegram ID теперь полностью поддерживаются")
+                else:
+                    logger.error(f"🚨 МИГРАЦИЯ НЕ СРАБОТАЛА! telegram_id все еще имеет тип: {row[0] if row else 'НЕИЗВЕСТНО'}")
+                    logger.error("🚨 Пользователи с большими ID будут получать ошибки!")
+        except Exception as check_error:
+            logger.error(f"🚨 Не удалось проверить статус миграции: {check_error}")
+            
+        logger.info("✅ Процесс миграции завершен")
+    except Exception as migration_error:
+        logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА МИГРАЦИИ: {migration_error}")
+        logger.error("🚨 Бот будет работать, но пользователи с большими ID получат ошибки!")
     
     # Создаем приложение
     application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()

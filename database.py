@@ -148,9 +148,12 @@ def migrate_telegram_id_if_needed():
                 return
             
             if current_type == 'integer':
+                logger.warning("🚨 КРИТИЧЕСКИ ВАЖНО: telegram_id все еще INTEGER - ТРЕБУЕТСЯ МИГРАЦИЯ!")
                 logger.info("🔧 Начинаю автоматическую миграцию telegram_id: INTEGER → BIGINT")
+                logger.info("🔧 Это исправит ошибку 'integer out of range' для больших Telegram ID")
                 
                 # Выполняем миграцию в транзакции
+                logger.info("🔧 Запускаю транзакцию миграции...")
                 with connection.begin() as transaction:
                     migration_steps = [
                         ("Добавление временной колонки", "ALTER TABLE users ADD COLUMN telegram_id_new BIGINT"),
@@ -178,8 +181,12 @@ def migrate_telegram_id_if_needed():
                     logger.info("🚀 Теперь поддерживаются любые Telegram ID!")
             
     except Exception as e:
-        logger.error(f"Ошибка при проверке/миграции telegram_id: {e}")
-        logger.info("Продолжаем работу с текущей схемой...")
+        logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА при проверке/миграции telegram_id: {e}")
+        logger.error(f"🚨 Тип ошибки: {type(e).__name__}")
+        import traceback
+        logger.error(f"🚨 Полный traceback: {traceback.format_exc()}")
+        logger.warning("⚠️ Продолжаем работу с текущей схемой - большие Telegram ID будут вызывать ошибки!")
+        logger.warning("⚠️ Рекомендуется использовать /forcemigration для повторной попытки")
 
 def create_tables():
     """Создание всех таблиц в базе данных"""
@@ -850,12 +857,21 @@ class DatabaseManager:
                     
                 except Exception as create_error:
                     logger.error(f"❌ НЕ УДАЛОСЬ создать пользователя заново: {create_error}")
-                    logger.info(f"📋 Проверим всех пользователей в БД:")
-                    all_users = db.query(User).all()
-                    for u in all_users[:5]:  # Показать первых 5
-                        logger.info(f"   📝 Найден пользователь: telegram_id={u.telegram_id}, имя={u.first_name}")
-                    if len(all_users) > 5:
-                        logger.info(f"   📝 ... и еще {len(all_users) - 5} пользователей")
+                    db.rollback()  # Откатываем транзакцию после ошибки
+                    
+                    # Создаем новую сессию для дальнейшей работы
+                    try:
+                        fresh_db = SessionLocal()
+                        logger.info(f"📋 Проверим всех пользователей в БД:")
+                        all_users = fresh_db.query(User).all()
+                        for u in all_users[:5]:  # Показать первых 5
+                            logger.info(f"   📝 Найден пользователь: telegram_id={u.telegram_id}, имя={u.first_name}")
+                        if len(all_users) > 5:
+                            logger.info(f"   📝 ... и еще {len(all_users) - 5} пользователей")
+                        fresh_db.close()
+                    except Exception as list_error:
+                        logger.error(f"❌ Ошибка при получении списка пользователей: {list_error}")
+                    
                     return False
             
             logger.info(f"✅ Пользователь НАЙДЕН: ID={user.id}, telegram_id={user.telegram_id}, имя={user.first_name}")
