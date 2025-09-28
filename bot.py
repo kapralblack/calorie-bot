@@ -1940,9 +1940,6 @@ class WeeklyStatsScheduler:
 
 def main():
     """Основная функция запуска бота"""
-    # Логируем информацию о базе данных
-    config.log_database_info()
-    
     # Создаем таблицы базы данных
     create_tables()
     logger.info("База данных инициализирована")
