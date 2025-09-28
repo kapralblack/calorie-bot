@@ -122,8 +122,12 @@ def migrate_telegram_id_if_needed():
         return
     
     try:
+        # Создаем отдельный engine с autocommit=True для миграции
+        from sqlalchemy import create_engine
+        migration_engine = create_engine(config.DATABASE_URL)
+        
         # Проверяем текущий тип поля telegram_id
-        with engine.connect() as connection:
+        with migration_engine.connect() as connection:
             result = connection.execute(text("""
                 SELECT data_type 
                 FROM information_schema.columns 
@@ -827,13 +831,32 @@ class DatabaseManager:
             
             if not user:
                 logger.error(f"❌ Пользователь {telegram_id} НЕ НАЙДЕН в базе данных!")
-                logger.info(f"📋 Проверим всех пользователей в БД:")
-                all_users = db.query(User).all()
-                for u in all_users[:5]:  # Показать первых 5
-                    logger.info(f"   📝 Найден пользователь: telegram_id={u.telegram_id}, имя={u.first_name}")
-                if len(all_users) > 5:
-                    logger.info(f"   📝 ... и еще {len(all_users) - 5} пользователей")
-                return False
+                logger.info(f"🔄 Возможно пользователь был создан как временный - попробуем создать заново")
+                
+                try:
+                    # Пытаемся создать пользователя заново (после миграции это должно сработать)
+                    logger.info(f"🆕 СОЗДАЕМ ПОЛЬЗОВАТЕЛЯ ЗАНОВО после миграции: {telegram_id}")
+                    user = User(
+                        telegram_id=telegram_id,
+                        username=None,  # Мы не имеем эти данные в контексте onboarding
+                        first_name=None,
+                        last_name=None,
+                        daily_calorie_goal=2000
+                    )
+                    db.add(user)
+                    db.commit()
+                    db.refresh(user)
+                    logger.info(f"✅ ПОЛЬЗОВАТЕЛЬ УСПЕШНО СОЗДАН: ID={user.id}, telegram_id={user.telegram_id}")
+                    
+                except Exception as create_error:
+                    logger.error(f"❌ НЕ УДАЛОСЬ создать пользователя заново: {create_error}")
+                    logger.info(f"📋 Проверим всех пользователей в БД:")
+                    all_users = db.query(User).all()
+                    for u in all_users[:5]:  # Показать первых 5
+                        logger.info(f"   📝 Найден пользователь: telegram_id={u.telegram_id}, имя={u.first_name}")
+                    if len(all_users) > 5:
+                        logger.info(f"   📝 ... и еще {len(all_users) - 5} пользователей")
+                    return False
             
             logger.info(f"✅ Пользователь НАЙДЕН: ID={user.id}, telegram_id={user.telegram_id}, имя={user.first_name}")
             logger.info(f"🔍 Тип объекта пользователя: {type(user).__name__}")

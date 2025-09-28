@@ -657,6 +657,24 @@ class CalorieBotHandlers:
         await update.message.reply_text(message)
 
     @staticmethod
+    async def force_migration_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Принудительная миграция telegram_id для /forcemigration"""
+        if not CalorieBotHandlers.is_admin(update.effective_user.id):
+            await update.message.reply_text("❌ Недостаточно прав")
+            return
+            
+        try:
+            await update.message.reply_text("🔧 Запускаю принудительную миграцию...")
+            
+            from database import migrate_telegram_id_if_needed
+            migrate_telegram_id_if_needed()
+            
+            await update.message.reply_text("✅ Принудительная миграция завершена! Проверьте логи.")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при миграции: {e}")
+
+    @staticmethod
     async def debug_migration_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Отладочная команда /debugmigration для проверки статуса миграции"""
         if not CalorieBotHandlers.is_admin(update.effective_user.id):
@@ -2433,6 +2451,7 @@ def main():
     application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
+    application.add_handler(CommandHandler("forcemigration", CalorieBotHandlers.force_migration_command))
     application.add_handler(CommandHandler("debugmigration", CalorieBotHandlers.debug_migration_command))
     application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))
     application.add_handler(CommandHandler("admindb", CalorieBotHandlers.admin_db_command))
