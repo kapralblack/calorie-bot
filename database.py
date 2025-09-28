@@ -1,7 +1,7 @@
 """
 Модель базы данных для телеграм-бота подсчета калорий
 """
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, func, BigInteger
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, Boolean, ForeignKey, func, BigInteger, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timezone, timedelta
@@ -111,9 +111,86 @@ engine = create_engine(config.DATABASE_URL, echo=False)
 # Создание сессии
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+def migrate_telegram_id_if_needed():
+    """Автоматическая миграция telegram_id с INTEGER на BIGINT если необходимо"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Проверяем только для PostgreSQL
+    if not config.DATABASE_URL.startswith('postgresql'):
+        logger.info("Используется SQLite, миграция telegram_id не нужна")
+        return
+    
+    try:
+        # Проверяем текущий тип поля telegram_id
+        with engine.connect() as connection:
+            result = connection.execute(text("""
+                SELECT data_type 
+                FROM information_schema.columns 
+                WHERE table_name = 'users' 
+                AND column_name = 'telegram_id'
+            """))
+            
+            row = result.fetchone()
+            if not row:
+                logger.info("Таблица users не существует, миграция не нужна")
+                return
+            
+            current_type = row[0]
+            logger.info(f"Текущий тип telegram_id: {current_type}")
+            
+            if current_type == 'bigint':
+                logger.info("✅ Поле telegram_id уже имеет тип BIGINT")
+                return
+            
+            if current_type == 'integer':
+                logger.info("🔧 Начинаю автоматическую миграцию telegram_id: INTEGER → BIGINT")
+                
+                # Выполняем миграцию в транзакции
+                with connection.begin() as transaction:
+                    migration_steps = [
+                        ("Добавление временной колонки", "ALTER TABLE users ADD COLUMN telegram_id_new BIGINT"),
+                        ("Копирование данных", "UPDATE users SET telegram_id_new = telegram_id"),
+                        ("Удаление ограничения уникальности", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_telegram_id_key"),
+                        ("Удаление индекса", "DROP INDEX IF EXISTS ix_users_telegram_id"), 
+                        ("Удаление старой колонки", "ALTER TABLE users DROP COLUMN telegram_id"),
+                        ("Переименование новой колонки", "ALTER TABLE users RENAME COLUMN telegram_id_new TO telegram_id"),
+                        ("Установка NOT NULL", "ALTER TABLE users ALTER COLUMN telegram_id SET NOT NULL"),
+                        ("Добавление ограничения уникальности", "ALTER TABLE users ADD CONSTRAINT users_telegram_id_key UNIQUE (telegram_id)"),
+                        ("Создание индекса", "CREATE INDEX ix_users_telegram_id ON users (telegram_id)")
+                    ]
+                    
+                    for i, (description, step) in enumerate(migration_steps, 1):
+                        try:
+                            logger.info(f"Шаг {i}/9: {description}")
+                            connection.execute(text(step))
+                        except Exception as step_error:
+                            logger.warning(f"Ошибка на шаге {i} ({description}): {step_error}")
+                            # Некоторые шаги могут не выполниться, продолжаем
+                            continue
+                    
+                    # Транзакция автоматически коммитится при выходе из блока
+                    logger.info("✅ Миграция telegram_id завершена успешно!")
+                    logger.info("🚀 Теперь поддерживаются любые Telegram ID!")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при проверке/миграции telegram_id: {e}")
+        logger.info("Продолжаем работу с текущей схемой...")
+
 def create_tables():
     """Создание всех таблиц в базе данных"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     Base.metadata.create_all(bind=engine)
+    logger.info("Таблицы базы данных созданы")
+    
+    # Выполняем автоматическую миграцию если необходимо
+    try:
+        migrate_telegram_id_if_needed()
+    except Exception as e:
+        logger.error(f"Ошибка при выполнении миграции: {e}")
+        logger.info("Бот продолжит работу с текущей схемой")
 
 def get_db():
     """Получение сессии базы данных"""
