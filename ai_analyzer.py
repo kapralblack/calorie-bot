@@ -61,6 +61,28 @@ FOOD_TRANSLATIONS = {
     'coffee': 'кофе',
     'cup of coffee': 'чашка кофе',
     
+    # Мясные блюда
+    'beef steak': 'говяжий стейк',
+    'grilled beef steak': 'стейк говяжий на гриле',
+    'fried beef steak': 'жареный говяжий стейк',
+    'pork steak': 'свиной стейк',
+    'chicken breast': 'куриная грудка',
+    'grilled chicken': 'курица гриль',
+    'fried chicken': 'жареная курица',
+    'roast beef': 'ростбиф',
+    'beef': 'говядина',
+    'pork': 'свинина',
+    'chicken': 'курица',
+    'steak': 'стейк',
+    'grilled meat': 'мясо на гриле',
+    'fried meat': 'жареное мясо',
+    'roasted meat': 'запеченное мясо',
+    'barbecue': 'барбекю',
+    'schnitzel': 'шницель',
+    'cutlet': 'котлета',
+    'meatball': 'фрикаделька',
+    'ground meat': 'фарш',
+    
     # Общие продукты
     'bread': 'хлеб',
     'cheese': 'сыр',

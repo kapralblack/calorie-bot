@@ -397,14 +397,7 @@ class CalorieBotHandlers:
         elif query.data == "edit_profile":
             await CalorieBotHandlers.settings_handler(update, context)
         elif query.data == "profile":
-            # Эмулируем команду /profile для callback query
-            mock_update = type('MockUpdate', (), {
-                'effective_user': query.from_user,
-                'message': type('MockMessage', (), {
-                    'reply_text': query.edit_message_text
-                })()
-            })()
-            await CalorieBotHandlers.profile_command(mock_update, context)
+            await CalorieBotHandlers.profile_callback_handler(update, context)
     
     @staticmethod
     async def detailed_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -740,6 +733,53 @@ class CalorieBotHandlers:
         )
 
     @staticmethod
+    async def profile_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик callback для личного кабинета"""
+        query = update.callback_query
+        user = query.from_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Основная информация
+        profile_info = DatabaseManager.get_user_info(db_user.id)
+        
+        # Количество дней ведения записей
+        tracking_days = DatabaseManager.get_tracking_days(db_user.id)
+        
+        message = f"""
+👤 **Личный кабинет**
+
+**Основная информация:**
+📝 Имя: {user.first_name or 'Не указано'}
+📊 Ведёте записи: {tracking_days} дней
+🎯 Цель калорий: {db_user.daily_calorie_goal} ккал/день
+
+**Физические параметры:**
+⚖️ Вес: {db_user.weight if db_user.weight else 'Не указан'} кг
+📏 Рост: {db_user.height if db_user.height else 'Не указан'} см
+🎂 Возраст: {db_user.age if db_user.age else 'Не указан'} лет
+🚻 Пол: {db_user.gender if db_user.gender else 'Не указан'}
+
+**Текущая статистика:**
+🔥 Сегодня: {profile_info['today_calories']} / {db_user.daily_calorie_goal} ккал
+📈 За неделю: {profile_info['week_avg']:.0f} ккал/день (среднее)
+📅 За месяц: {profile_info['month_avg']:.0f} ккал/день (среднее)
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("📅 История по дням", callback_data="daily_history")],
+            [InlineKeyboardButton("📊 Недельная статистика", callback_data="weekly_stats_detail")],
+            [InlineKeyboardButton("⚙️ Изменить параметры", callback_data="edit_profile")],
+            [InlineKeyboardButton(f"{config.EMOJIS['back']} Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+
+    @staticmethod
     async def daily_history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показывает историю калорий по дням"""
         query = update.callback_query
@@ -837,17 +877,7 @@ class CalorieBotHandlers:
     @staticmethod
     async def back_to_profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Возврат к профилю"""
-        query = update.callback_query
-        
-        # Эмулируем команду /profile
-        mock_update = type('MockUpdate', (), {
-            'effective_user': query.from_user,
-            'message': type('MockMessage', (), {
-                'reply_text': query.edit_message_text
-            })()
-        })()
-        
-        await CalorieBotHandlers.profile_command(mock_update, context)
+        await CalorieBotHandlers.profile_callback_handler(update, context)
 
 class WeeklyStatsScheduler:
     """Класс для планирования еженедельных уведомлений"""

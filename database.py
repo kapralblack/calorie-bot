@@ -245,22 +245,16 @@ class DatabaseManager:
     @staticmethod
     def get_today_calories(user_id):
         """Получить калории за сегодня - с прямым подсчетом из записей еды"""
-        db = get_db()
+        db = SessionLocal()
         try:
-            from datetime import datetime
-            today = datetime.now().date()
-            
-            # Получаем все записи еды за сегодня напрямую
-            entries = db.query(FoodEntry).filter(
+            # Используем тот же подход что и в get_user_info
+            today = datetime.now(timezone.utc).date()
+            today_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
                 FoodEntry.user_id == user_id,
-                FoodEntry.created_at >= datetime.combine(today, datetime.min.time().replace(tzinfo=datetime.now().tzinfo) if datetime.now().tzinfo else datetime.min.time()),
-                FoodEntry.created_at < datetime.combine(today, datetime.max.time().replace(tzinfo=datetime.now().tzinfo) if datetime.now().tzinfo else datetime.max.time())
-            ).all()
+                func.date(FoodEntry.created_at) == today
+            ).scalar() or 0
             
-            # Считаем общие калории
-            total_calories = sum(entry.total_calories for entry in entries)
-            
-            return total_calories
+            return float(today_calories)
         finally:
             db.close()
     
@@ -365,7 +359,7 @@ class DatabaseManager:
                 FoodEntry.created_at >= week_ago
             ).all()
             
-            week_total = sum(entry.calories for entry in week_entries)
+            week_total = sum(entry.total_calories for entry in week_entries)
             week_avg = week_total / 7 if week_entries else 0
             
             # Средние за месяц
@@ -375,13 +369,13 @@ class DatabaseManager:
                 FoodEntry.created_at >= month_ago
             ).all()
             
-            month_total = sum(entry.calories for entry in month_entries)
+            month_total = sum(entry.total_calories for entry in month_entries)
             month_avg = month_total / 30 if month_entries else 0
             
             return {
-                'today_calories': today_calories,
-                'week_avg': week_avg,
-                'month_avg': month_avg
+                'today_calories': float(today_calories) if today_calories else 0.0,
+                'week_avg': float(week_avg) if week_avg else 0.0,
+                'month_avg': float(month_avg) if month_avg else 0.0
             }
         finally:
             db.close()
@@ -411,7 +405,7 @@ class DatabaseManager:
             # Группируем по дням и суммируем калории
             results = db.query(
                 func.date(FoodEntry.created_at).label('date'),
-                func.sum(FoodEntry.calories).label('calories')
+                func.sum(FoodEntry.total_calories).label('calories')
             ).filter(
                 FoodEntry.user_id == user_id,
                 FoodEntry.created_at >= start_date
@@ -452,7 +446,7 @@ class DatabaseManager:
                 
                 if week_entries:
                     # Считаем статистику
-                    total_calories = sum(entry.calories for entry in week_entries)
+                    total_calories = sum(entry.total_calories for entry in week_entries)
                     unique_days = len(set(entry.created_at.date() for entry in week_entries))
                     avg_calories = total_calories / 7  # среднее за 7 дней
                     
