@@ -329,16 +329,16 @@ class DatabaseManager:
                         multiplier = activity_multipliers.get(self.activity_level, 1.55)
                         base_calories = int(bmr * multiplier)
                         
-                    # Коррекция в зависимости от цели по весу (временно отключено)
-                    # weight_goal_corrections = {
-                    #     'lose': -500,      # Дефицит 500 ккал для похудения
-                    #     'maintain': 0,     # Поддержание текущего веса
-                    #     'gain': 300        # Профицит 300 ккал для набора веса
-                    # }
-                    
-                    # correction = weight_goal_corrections.get(self.weight_goal, 0)
-                    # daily_calories = base_calories + correction
-                    daily_calories = base_calories  # Пока без коррекции
+                        # Коррекция в зависимости от цели по весу (временно отключено)
+                        # weight_goal_corrections = {
+                        #     'lose': -500,      # Дефицит 500 ккал для похудения
+                        #     'maintain': 0,     # Поддержание текущего веса
+                        #     'gain': 300        # Профицит 300 ккал для набора веса
+                        # }
+                        
+                        # correction = weight_goal_corrections.get(self.weight_goal, 0)
+                        # daily_calories = base_calories + correction
+                        daily_calories = base_calories  # Пока без коррекции
                         
                         # Минимальная норма калорий
                         min_calories = 1500 if self.gender.lower() == 'male' else 1200
