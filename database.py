@@ -55,17 +55,16 @@ class User(Base):
         multiplier = activity_multipliers.get(self.activity_level, 1.55)
         base_calories = int(bmr * multiplier)
         
-        # Коррекция в зависимости от цели по весу (временно отключено)
-        # weight_goal_corrections = {
-        #     'lose': -500,      # Дефицит 500 ккал для похудения (~0.5 кг в неделю)
-        #     'maintain': 0,     # Поддержание текущего веса
-        #     'gain': 300,       # Профицит 300 ккал для набора веса (~0.3 кг в неделю)
-        #     'recomp': 0        # Рекомпозиция - поддержание веса с фокусом на мышцы
-        # }
+        # Коррекция в зависимости от цели по весу
+        weight_goal_corrections = {
+            'lose': -500,      # Дефицит 500 ккал для похудения (~0.5 кг в неделю)
+            'maintain': 0,     # Поддержание текущего веса
+            'gain': 300,       # Профицит 300 ккал для набора веса (~0.3 кг в неделю)
+            'recomp': 0        # Рекомпозиция - поддержание веса с фокусом на мышцы
+        }
         
-        # correction = weight_goal_corrections.get(self.weight_goal, 0)
-        # daily_calories = base_calories + correction
-        daily_calories = base_calories  # Пока без коррекции
+        correction = weight_goal_corrections.get(self.weight_goal, 0)
+        daily_calories = base_calories + correction
         
         # Минимальная норма калорий (не менее 1200 для женщин, 1500 для мужчин)
         min_calories = 1500 if self.gender.lower() == 'male' else 1200
