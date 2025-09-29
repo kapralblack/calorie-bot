@@ -2019,8 +2019,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.stats_handler(update, context)
         elif query.data == "settings":
             await CalorieBotHandlers.settings_handler(update, context)
-        # elif query.data == "goals":  # временно отключено
-        #     await CalorieBotHandlers.goals_command(update, context)
+        elif query.data == "goals":
+            await CalorieBotHandlers.goals_command(update, context)
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
         elif query.data == "add_more":
@@ -2035,8 +2035,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
-        # elif query.data.startswith("goal_"):  # временно отключено
-        #     await CalorieBotHandlers.goal_selection_handler(update, context)
+        elif query.data.startswith("goal_"):
+            await CalorieBotHandlers.goal_selection_handler(update, context)
         elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data == "cancel_correction":
@@ -2414,8 +2414,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.settings_command(update, context)
         elif text == "📅 История":
             await CalorieBotHandlers.history_command(update, context)
-        # elif text == "🎯 Мои цели":  # временно отключено
-        #     await CalorieBotHandlers.goals_command(update, context)
+        elif text == "🎯 Мои цели":
+            await CalorieBotHandlers.goals_command(update, context)
         elif text == "❓ Помощь":
             await CalorieBotHandlers.help_command(update, context)
         elif text == "🏠 Главное меню":
