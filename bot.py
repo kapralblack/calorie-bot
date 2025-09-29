@@ -41,7 +41,10 @@ class CalorieBotHandlers:
                 KeyboardButton("📅 История")
             ],
             [
-                KeyboardButton("❓ Помощь"),
+                KeyboardButton("🎯 Мои цели"),
+                KeyboardButton("❓ Помощь")
+            ],
+            [
                 KeyboardButton("🏠 Главное меню")
             ]
         ]
@@ -1843,13 +1846,14 @@ class CalorieBotHandlers:
                 message += f"**Сегодня ({today.strftime('%d.%m')})**\n"
                 message += f"{config.EMOJIS['fire']} Калории: {today_stat.total_calories:.0f} из {db_user.daily_calorie_goal}\n"
                 
-                # Отображение цели по весу временно отключено
-                # weight_goal_text = {
-                #     'lose': '📉 Похудение',
-                #     'maintain': '⚖️ Поддержание веса',
-                #     'gain': '📈 Набор веса'
-                # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-                # message += f"🎯 Цель: {weight_goal_text}\n"
+                # Отображаем цель по весу
+                weight_goal_text = {
+                    'lose': '📉 Похудение',
+                    'maintain': '⚖️ Поддержание веса',
+                    'gain': '📈 Набор веса',
+                    'recomp': '💪 Рекомпозиция'
+                }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+                message += f"🎯 Цель: {weight_goal_text}\n"
                 
                 message += f"{config.EMOJIS['muscle']} Белки: {today_stat.total_proteins:.1f}г\n"
                 message += f"🍞 Углеводы: {today_stat.total_carbs:.1f}г\n"
@@ -1938,19 +1942,20 @@ class CalorieBotHandlers:
         if db_user.gender:
             message += f"👤 Пол: {'мужской' if db_user.gender == 'male' else 'женский'}\n"
         
-        # Отображение цели по весу временно отключено
-        # weight_goal_text = {
-        #     'lose': '📉 Похудеть',
-        #     'maintain': '⚖️ Сохранить вес',
-        #     'gain': '📈 Набрать вес'
-        # }.get(db_user.weight_goal, '⚖️ Сохранить вес')
-        # message += f"{weight_goal_text}\n"
+        # Отображаем цель по весу
+        weight_goal_text = {
+            'lose': '📉 Похудение',
+            'maintain': '⚖️ Поддержание веса',
+            'gain': '📈 Набор веса',
+            'recomp': '💪 Рекомпозиция'
+        }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+        message += f"🎯 Цель: {weight_goal_text}\n"
         
         message += f"\nВыберите, что хотите настроить:"
         
         keyboard = [
             [InlineKeyboardButton("🎯 Изменить цель калорий", callback_data="set_calorie_goal")],
-            # [InlineKeyboardButton("⚖️ Изменить цель по весу", callback_data="set_weight_goal")],  # временно отключено
+            [InlineKeyboardButton("🎯 Изменить цель по весу", callback_data="goals")],
             [InlineKeyboardButton(f"{config.EMOJIS['scales']} Обновить вес", callback_data="set_weight")],
             [InlineKeyboardButton("📏 Указать рост", callback_data="set_height")],
             [InlineKeyboardButton("👤 Указать пол и возраст", callback_data="set_personal_info")],
@@ -1987,6 +1992,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.stats_handler(update, context)
         elif query.data == "settings":
             await CalorieBotHandlers.settings_handler(update, context)
+        elif query.data == "goals":
+            await CalorieBotHandlers.goals_command(update, context)
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
         elif query.data == "add_more":
@@ -2001,10 +2008,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
-        # elif query.data.startswith("weight_goal_"):  # временно отключено
-        #     await CalorieBotHandlers.weight_goal_handler(update, context)
-        # elif query.data.startswith("onboarding_weight_goal_"):  # временно отключено
-        #     await CalorieBotHandlers.complete_onboarding_final(update, context)
+        elif query.data.startswith("goal_"):
+            await CalorieBotHandlers.goal_selection_handler(update, context)
         elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data == "cancel_correction":
@@ -2217,6 +2222,157 @@ class CalorieBotHandlers:
         )
     
     @staticmethod
+    async def goals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда управления целями по весу"""
+        user = update.effective_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Получаем текущую цель
+        current_goal = db_user.weight_goal or 'maintain'
+        
+        # Формируем сообщение с текущей целью
+        goal_texts = {
+            'lose': '📉 Похудение',
+            'maintain': '⚖️ Поддержание веса',
+            'gain': '📈 Набор веса',
+            'recomp': '💪 Рекомпозиция'
+        }
+        
+        current_goal_text = goal_texts.get(current_goal, '⚖️ Поддержание веса')
+        
+        message = f"🎯 **Мои цели по весу**\n\n"
+        message += f"**Текущая цель:** {current_goal_text}\n"
+        message += f"**Цель калорий:** {db_user.daily_calorie_goal} ккал/день\n\n"
+        
+        # Добавляем описание текущей цели
+        if current_goal == 'lose':
+            message += "💡 **Похудение:**\n"
+            message += "• Дефицит 500 ккал/день\n"
+            message += "• Ожидаемая потеря: ~0.5 кг/неделю\n"
+            message += "• Минимальная норма: 1200-1500 ккал/день\n"
+        elif current_goal == 'maintain':
+            message += "💡 **Поддержание веса:**\n"
+            message += "• Баланс калорий = расход калорий\n"
+            message += "• Вес остается стабильным\n"
+            message += "• Рекомендуется регулярная активность\n"
+        elif current_goal == 'gain':
+            message += "💡 **Набор веса:**\n"
+            message += "• Профицит 300 ккал/день\n"
+            message += "• Ожидаемый набор: ~0.3 кг/неделю\n"
+            message += "• Рекомендуется силовые тренировки\n"
+        elif current_goal == 'recomp':
+            message += "💡 **Рекомпозиция:**\n"
+            message += "• Поддержание веса с фокусом на мышцы\n"
+            message += "• Баланс калорий + силовые тренировки\n"
+            message += "• Улучшение состава тела\n"
+        
+        message += "\n**Выберите новую цель:**"
+        
+        keyboard = [
+            [InlineKeyboardButton("📉 Похудеть", callback_data="goal_lose")],
+            [InlineKeyboardButton("⚖️ Сохранить вес", callback_data="goal_maintain")],
+            [InlineKeyboardButton("📈 Набрать вес", callback_data="goal_gain")],
+            [InlineKeyboardButton("💪 Рекомпозиция", callback_data="goal_recomp")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    @staticmethod
+    async def goal_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик выбора цели по весу"""
+        query = update.callback_query
+        await query.answer()
+        
+        user = query.from_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Определяем выбранную цель
+        goal_mapping = {
+            'goal_lose': 'lose',
+            'goal_maintain': 'maintain',
+            'goal_gain': 'gain',
+            'goal_recomp': 'recomp'
+        }
+        
+        selected_goal = goal_mapping.get(query.data, 'maintain')
+        
+        # Обновляем цель в базе данных
+        DatabaseManager.update_user_settings(
+            user_id=db_user.id,
+            weight_goal=selected_goal
+        )
+        
+        # Пересчитываем цель калорий с учетом новой цели по весу
+        updated_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        new_calorie_goal = updated_user.calculate_daily_calorie_goal()
+        
+        # Обновляем цель калорий в базе данных
+        DatabaseManager.update_user_settings(
+            user_id=db_user.id,
+            daily_calorie_goal=new_calorie_goal
+        )
+        
+        # Формируем сообщение
+        goal_texts = {
+            'lose': '📉 Похудение',
+            'maintain': '⚖️ Поддержание веса',
+            'gain': '📈 Набор веса',
+            'recomp': '💪 Рекомпозиция'
+        }
+        
+        message = f"✅ **Цель обновлена!**\n\n"
+        message += f"🎯 **Новая цель:** {goal_texts[selected_goal]}\n"
+        message += f"🔥 **Цель калорий:** {new_calorie_goal} ккал/день\n\n"
+        
+        # Добавляем описание новой цели
+        if selected_goal == 'lose':
+            message += "💡 **Для похудения:**\n"
+            message += "• Создан дефицит 500 ккал/день\n"
+            message += "• Ожидаемая потеря: ~0.5 кг/неделю\n"
+            message += "• Минимальная норма: 1200-1500 ккал/день\n"
+            message += "• Рекомендуется кардио и дефицит калорий"
+        elif selected_goal == 'maintain':
+            message += "💡 **Для поддержания веса:**\n"
+            message += "• Баланс калорий = расход калорий\n"
+            message += "• Вес остается стабильным\n"
+            message += "• Рекомендуется регулярная активность\n"
+            message += "• Сбалансированное питание"
+        elif selected_goal == 'gain':
+            message += "💡 **Для набора веса:**\n"
+            message += "• Создан профицит 300 ккал/день\n"
+            message += "• Ожидаемый набор: ~0.3 кг/неделю\n"
+            message += "• Рекомендуется силовые тренировки\n"
+            message += "• Увеличение белка в рационе"
+        elif selected_goal == 'recomp':
+            message += "💡 **Для рекомпозиции:**\n"
+            message += "• Поддержание веса с фокусом на мышцы\n"
+            message += "• Баланс калорий + силовые тренировки\n"
+            message += "• Улучшение состава тела\n"
+            message += "• Высокий белок + регулярные тренировки"
+        
+        message += "\n\n🚀 **Теперь ваша цель калорий пересчитана!**"
+        
+        keyboard = [
+            [InlineKeyboardButton("🎯 Мои цели", callback_data="goals")],
+            [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    @staticmethod
     async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик текстовых сообщений"""
         user = update.effective_user
@@ -2231,6 +2387,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.settings_command(update, context)
         elif text == "📅 История":
             await CalorieBotHandlers.history_command(update, context)
+        elif text == "🎯 Мои цели":
+            await CalorieBotHandlers.goals_command(update, context)
         elif text == "❓ Помощь":
             await CalorieBotHandlers.help_command(update, context)
         elif text == "🏠 Главное меню":
