@@ -949,14 +949,24 @@ class CalorieBotHandlers:
 
 🚀 Отправляйте фото прямо сейчас!"""
 
-        keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            message,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
+        # Используем постоянную клавиатуру для обычных сообщений
+        if query:
+            # Это callback query - используем inline кнопки
+            keyboard = [[InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        else:
+            # Это обычное сообщение - используем постоянную клавиатуру
+            reply_markup = CalorieBotHandlers.get_main_keyboard()
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
 
     @staticmethod  
     async def my_goal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1454,35 +1464,42 @@ class CalorieBotHandlers:
     @staticmethod
     async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда истории питания"""
-        user = update.effective_user
-        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
-        
-        # Получаем последние записи
-        from database import FoodEntry
-        db = DatabaseManager.SessionLocal()
         try:
-            recent_entries = db.query(FoodEntry).filter(
-                FoodEntry.user_id == db_user.id
-            ).order_by(FoodEntry.created_at.desc()).limit(10).all()
+            user = update.effective_user
+            db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
             
-            if not recent_entries:
-                message = "📅 **История питания пуста**\n\nНачните с отправки фото еды!"
-            else:
-                message = "📅 **Последние записи:**\n\n"
-                for entry in recent_entries:
-                    date_str = entry.created_at.strftime("%d.%m %H:%M")
-                    message += f"• {date_str} - {entry.calories:.0f} ккал\n"
-                    if entry.food_name:
-                        message += f"  {entry.food_name}\n"
-                    message += "\n"
-            
+            # Получаем последние записи
+            from database import FoodEntry
+            db = DatabaseManager.SessionLocal()
+            try:
+                recent_entries = db.query(FoodEntry).filter(
+                    FoodEntry.user_id == db_user.id
+                ).order_by(FoodEntry.created_at.desc()).limit(10).all()
+                
+                if not recent_entries:
+                    message = "📅 **История питания пуста**\n\nНачните с отправки фото еды!"
+                else:
+                    message = "📅 **Последние записи:**\n\n"
+                    for entry in recent_entries:
+                        date_str = entry.created_at.strftime("%d.%m %H:%M")
+                        message += f"• {date_str} - {entry.calories:.0f} ккал\n"
+                        if entry.food_name:
+                            message += f"  {entry.food_name}\n"
+                        message += "\n"
+                
+                await update.message.reply_text(
+                    message,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=CalorieBotHandlers.get_main_keyboard()
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Ошибка в history_command: {e}")
             await update.message.reply_text(
-                message,
-                parse_mode=ParseMode.MARKDOWN,
+                f"❌ Ошибка загрузки истории: {e}",
                 reply_markup=CalorieBotHandlers.get_main_keyboard()
             )
-        finally:
-            db.close()
     
     @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1963,7 +1980,7 @@ class CalorieBotHandlers:
         
         # Обработка кнопок постоянной клавиатуры
         if text == "🍽️ Анализ еды":
-            await CalorieBotHandlers.add_photo_tip_handler(update, context)
+            await CalorieBotHandlers.photo_tip_handler(update, context)
         elif text == "📊 Статистика":
             await CalorieBotHandlers.stats_command(update, context)
         elif text == "⚙️ Настройки":
