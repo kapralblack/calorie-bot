@@ -545,8 +545,8 @@ class DatabaseManager:
                     user.gender = gender
                 if activity_level is not None:
                     user.activity_level = activity_level
-                # if weight_goal is not None:
-                #     user.weight_goal = weight_goal  # временно отключено
+                if weight_goal is not None:
+                    user.weight_goal = weight_goal
                 
                 db.commit()
                 db.refresh(user)
@@ -956,8 +956,8 @@ class DatabaseManager:
                 user.age = int(age)
                 user.gender = str(gender).lower()
                 user.activity_level = str(activity_level)
-                # user.weight_goal = str(weight_goal).lower()  # временно отключено
-                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
+                user.weight_goal = str(weight_goal).lower()
+                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}, weight_goal={user.weight_goal}")
             except Exception as set_error:
                 logger.error(f"❌ ОШИБКА при установке данных: {set_error}")
                 raise set_error
@@ -969,7 +969,7 @@ class DatabaseManager:
             logger.info(f"   📊 user.age: {user.age} (тип: {type(user.age)})")
             logger.info(f"   📊 user.gender: {user.gender} (тип: {type(user.gender)})")
             logger.info(f"   📊 user.activity_level: {user.activity_level} (тип: {type(user.activity_level)})")
-            # logger.info(f"   📊 user.weight_goal: {user.weight_goal} (тип: {type(user.weight_goal)})")  # временно отключено
+            logger.info(f"   📊 user.weight_goal: {user.weight_goal} (тип: {type(user.weight_goal)})")
             
             # Рассчитываем персональную норму калорий
             logger.info(f"🧮 РАССЧИТЫВАЕМ дневную норму калорий для пользователя {telegram_id}")
@@ -992,7 +992,7 @@ class DatabaseManager:
             logger.info(f"   📝 user.id: {user.id}")
             logger.info(f"   📝 user.telegram_id: {user.telegram_id}")
             logger.info(f"   📝 user.daily_calorie_goal: {user.daily_calorie_goal}")
-            logger.info(f"   📝 Все основные поля заполнены: {bool(user.weight and user.height and user.age and user.gender)}")
+            logger.info(f"   📝 Все основные поля заполнены: {bool(user.weight and user.height and user.age and user.gender and user.weight_goal)}")
             
             logger.info(f"💾 СОХРАНЯЕМ изменения в базу данных для пользователя {telegram_id}")
             try:
@@ -1034,6 +1034,6 @@ class DatabaseManager:
                 return False
             
             # Считаем что пользователь прошел онбординг если у него есть основные данные
-            return bool(user.weight and user.height and user.age and user.gender)
+            return bool(user.weight and user.height and user.age and user.gender and user.weight_goal)
         finally:
             db.close()
