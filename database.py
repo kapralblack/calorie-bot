@@ -28,13 +28,14 @@ class User(Base):
     age = Column(Integer)
     gender = Column(String(10))  # male/female
     activity_level = Column(String(20), default='moderate')  # low/moderate/high
+    weight_goal = Column(String(20), default='maintain')  # lose/maintain/gain
     # onboarding_completed = Column(Boolean, default=False)  # Временно отключено для совместимости
     
     # Связи
     food_entries = relationship("FoodEntry", back_populates="user", cascade="all, delete-orphan")
     
     def calculate_daily_calorie_goal(self):
-        """Рассчитывает дневную норму калорий по формуле Миффлина-Сан Жеора"""
+        """Рассчитывает дневную норму калорий по формуле Миффлина-Сан Жеора с учетом цели по весу"""
         if not all([self.weight, self.height, self.age, self.gender]):
             return 2000  # Дефолтное значение если данных недостаточно
         
@@ -52,7 +53,21 @@ class User(Base):
         }
         
         multiplier = activity_multipliers.get(self.activity_level, 1.55)
-        daily_calories = int(bmr * multiplier)
+        base_calories = int(bmr * multiplier)
+        
+        # Коррекция в зависимости от цели по весу
+        weight_goal_corrections = {
+            'lose': -500,      # Дефицит 500 ккал для похудения (~0.5 кг в неделю)
+            'maintain': 0,     # Поддержание текущего веса
+            'gain': 300        # Профицит 300 ккал для набора веса (~0.3 кг в неделю)
+        }
+        
+        correction = weight_goal_corrections.get(self.weight_goal, 0)
+        daily_calories = base_calories + correction
+        
+        # Минимальная норма калорий (не менее 1200 для женщин, 1500 для мужчин)
+        min_calories = 1500 if self.gender.lower() == 'male' else 1200
+        daily_calories = max(daily_calories, min_calories)
         
         return daily_calories
 
@@ -295,9 +310,10 @@ class DatabaseManager:
                         self.age = None
                         self.gender = None
                         self.activity_level = 'moderate'
+                        self.weight_goal = 'maintain'
                     
                     def calculate_daily_calorie_goal(self):
-                        """Рассчитывает дневную норму калорий"""
+                        """Рассчитывает дневную норму калорий с учетом цели по весу"""
                         if not all([self.weight, self.height, self.age, self.gender]):
                             return 2000
                         
@@ -310,7 +326,21 @@ class DatabaseManager:
                         # Коэффициент активности
                         activity_multipliers = {'low': 1.2, 'moderate': 1.55, 'high': 1.9}
                         multiplier = activity_multipliers.get(self.activity_level, 1.55)
-                        return int(bmr * multiplier)
+                        base_calories = int(bmr * multiplier)
+                        
+                        # Коррекция в зависимости от цели по весу
+                        weight_goal_corrections = {
+                            'lose': -500,      # Дефицит 500 ккал для похудения
+                            'maintain': 0,     # Поддержание текущего веса
+                            'gain': 300        # Профицит 300 ккал для набора веса
+                        }
+                        
+                        correction = weight_goal_corrections.get(self.weight_goal, 0)
+                        daily_calories = base_calories + correction
+                        
+                        # Минимальная норма калорий
+                        min_calories = 1500 if self.gender.lower() == 'male' else 1200
+                        return max(daily_calories, min_calories)
                         
                 return TempUser()
             
@@ -329,9 +359,10 @@ class DatabaseManager:
                     self.age = None
                     self.gender = None
                     self.activity_level = 'moderate'
+                    self.weight_goal = 'maintain'
                 
                 def calculate_daily_calorie_goal(self):
-                    """Рассчитывает дневную норму калорий"""
+                    """Рассчитывает дневную норму калорий с учетом цели по весу"""
                     if not all([self.weight, self.height, self.age, self.gender]):
                         return 2000
                     
@@ -344,7 +375,21 @@ class DatabaseManager:
                     # Коэффициент активности
                     activity_multipliers = {'low': 1.2, 'moderate': 1.55, 'high': 1.9}
                     multiplier = activity_multipliers.get(self.activity_level, 1.55)
-                    return int(bmr * multiplier)
+                    base_calories = int(bmr * multiplier)
+                    
+                    # Коррекция в зависимости от цели по весу
+                    weight_goal_corrections = {
+                        'lose': -500,      # Дефицит 500 ккал для похудения
+                        'maintain': 0,     # Поддержание текущего веса
+                        'gain': 300        # Профицит 300 ккал для набора веса
+                    }
+                    
+                    correction = weight_goal_corrections.get(self.weight_goal, 0)
+                    daily_calories = base_calories + correction
+                    
+                    # Минимальная норма калорий
+                    min_calories = 1500 if self.gender.lower() == 'male' else 1200
+                    return max(daily_calories, min_calories)
             
             return TempUser()
         finally:
@@ -477,7 +522,7 @@ class DatabaseManager:
     
     @staticmethod
     def update_user_settings(user_id, daily_calorie_goal=None, weight=None, height=None, 
-                           age=None, gender=None, activity_level=None):
+                           age=None, gender=None, activity_level=None, weight_goal=None):
         """Обновить настройки пользователя"""
         db = SessionLocal()
         try:
@@ -497,6 +542,8 @@ class DatabaseManager:
                     user.gender = gender
                 if activity_level is not None:
                     user.activity_level = activity_level
+                if weight_goal is not None:
+                    user.weight_goal = weight_goal
                 
                 db.commit()
                 db.refresh(user)
@@ -828,7 +875,7 @@ class DatabaseManager:
             db.close()
     
     @staticmethod
-    def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str):
+    def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str, weight_goal: str = 'maintain'):
         """Завершить онбординг пользователя и рассчитать персональную норму калорий"""
         import logging
         logger = logging.getLogger(__name__)
@@ -906,7 +953,8 @@ class DatabaseManager:
                 user.age = int(age)
                 user.gender = str(gender).lower()
                 user.activity_level = str(activity_level)
-                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}")
+                user.weight_goal = str(weight_goal).lower()
+                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}, weight_goal={user.weight_goal}")
             except Exception as set_error:
                 logger.error(f"❌ ОШИБКА при установке данных: {set_error}")
                 raise set_error
@@ -918,6 +966,7 @@ class DatabaseManager:
             logger.info(f"   📊 user.age: {user.age} (тип: {type(user.age)})")
             logger.info(f"   📊 user.gender: {user.gender} (тип: {type(user.gender)})")
             logger.info(f"   📊 user.activity_level: {user.activity_level} (тип: {type(user.activity_level)})")
+            logger.info(f"   📊 user.weight_goal: {user.weight_goal} (тип: {type(user.weight_goal)})")
             
             # Рассчитываем персональную норму калорий
             logger.info(f"🧮 РАССЧИТЫВАЕМ дневную норму калорий для пользователя {telegram_id}")
@@ -940,7 +989,7 @@ class DatabaseManager:
             logger.info(f"   📝 user.id: {user.id}")
             logger.info(f"   📝 user.telegram_id: {user.telegram_id}")
             logger.info(f"   📝 user.daily_calorie_goal: {user.daily_calorie_goal}")
-            logger.info(f"   📝 Все основные поля заполнены: {bool(user.weight and user.height and user.age and user.gender)}")
+            logger.info(f"   📝 Все основные поля заполнены: {bool(user.weight and user.height and user.age and user.gender and user.weight_goal)}")
             
             logger.info(f"💾 СОХРАНЯЕМ изменения в базу данных для пользователя {telegram_id}")
             try:
@@ -982,6 +1031,6 @@ class DatabaseManager:
                 return False
             
             # Считаем что пользователь прошел онбординг если у него есть основные данные
-            return bool(user.weight and user.height and user.age and user.gender)
+            return bool(user.weight and user.height and user.age and user.gender and user.weight_goal)
         finally:
             db.close()
