@@ -1649,7 +1649,8 @@ class CalorieBotHandlers:
             db = SessionLocal()
             
             # Выполняем миграцию
-            db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_goal VARCHAR(20) DEFAULT 'maintain'")
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_goal VARCHAR(20) DEFAULT 'maintain'"))
             db.commit()
             
             await update.message.reply_text("✅ Поле weight_goal успешно добавлено в базу данных!")
