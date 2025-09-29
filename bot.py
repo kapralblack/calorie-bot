@@ -1338,28 +1338,100 @@ class CalorieBotHandlers:
         height = context.user_data['onboarding_height']
         weight = context.user_data['onboarding_weight']
         
-        # Добавляем шаг выбора цели по весу
-        message = f"🎯 **Последний шаг: выберите вашу цель**\n\n"
-        message += f"📊 **Ваши данные:**\n"
-        message += f"• Вес: {weight} кг\n"
-        message += f"• Рост: {height} см\n"
-        message += f"• Возраст: {age} лет\n"
-        message += f"• Пол: {'мужской' if gender == 'male' else 'женский'}\n"
-        message += f"• Активность: {activity_text}\n\n"
-        message += f"**Выберите вашу цель по весу:**"
+        # Шаг выбора цели по весу временно отключен
+        # message = f"🎯 **Последний шаг: выберите вашу цель**\n\n"
+        # message += f"📊 **Ваши данные:**\n"
+        # message += f"• Вес: {weight} кг\n"
+        # message += f"• Рост: {height} см\n"
+        # message += f"• Возраст: {age} лет\n"
+        # message += f"• Пол: {'мужской' if gender == 'male' else 'женский'}\n"
+        # message += f"• Активность: {activity_text}\n\n"
+        # message += f"**Выберите вашу цель по весу:**"
+        # 
+        # keyboard = [
+        #     [InlineKeyboardButton("📉 Похудеть", callback_data="onboarding_weight_goal_lose")],
+        #     [InlineKeyboardButton("⚖️ Сохранить вес", callback_data="onboarding_weight_goal_maintain")],
+        #     [InlineKeyboardButton("📈 Набрать вес", callback_data="onboarding_weight_goal_gain")]
+        # ]
+        # reply_markup = InlineKeyboardMarkup(keyboard)
+        # 
+        # await query.edit_message_text(
+        #     message,
+        #     parse_mode=ParseMode.MARKDOWN,
+        #     reply_markup=reply_markup
+        # )
         
-        keyboard = [
-            [InlineKeyboardButton("📉 Похудеть", callback_data="onboarding_weight_goal_lose")],
-            [InlineKeyboardButton("⚖️ Сохранить вес", callback_data="onboarding_weight_goal_maintain")],
-            [InlineKeyboardButton("📈 Набрать вес", callback_data="onboarding_weight_goal_gain")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            message,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
+        # Завершаем онбординг напрямую
+        daily_calories = DatabaseManager.complete_onboarding(
+            telegram_id=user.id,
+            weight=weight,
+            height=height,
+            age=age,
+            gender=gender,
+            activity_level=activity_level
         )
+        
+        logger.info(f"🎯 BOT: Результат complete_onboarding: {daily_calories} (тип: {type(daily_calories)})")
+        
+        if daily_calories:
+            # Очищаем данные онбординга
+            for key in ['onboarding_gender', 'onboarding_age', 'onboarding_height', 'onboarding_weight', 'waiting_for']:
+                context.user_data.pop(key, None)
+            
+            # Рассчитываем ИМТ
+            bmi = weight / ((height/100) ** 2)
+            if bmi < 18.5:
+                bmi_status = "Недостаток веса"
+                bmi_emoji = "📉"
+            elif bmi < 25:
+                bmi_status = "Нормальный вес"
+                bmi_emoji = "✅"
+            elif bmi < 30:
+                bmi_status = "Избыточный вес"
+                bmi_emoji = "📈"
+            else:
+                bmi_status = "Ожирение"
+                bmi_emoji = "🔺"
+            
+            gender_text = "мужской" if gender == 'male' else "женский"
+            
+            success_message = f"""
+🎉 **Профиль успешно настроен!**
+
+👤 **Ваши данные:**
+• Пол: {gender_text}
+• Возраст: {age} лет
+• Рост: {height:.0f} см
+• Вес: {weight:.1f} кг
+• Активность: {activity_text}
+
+📊 **Рассчитанные показатели:**
+• ИМТ: {bmi:.1f} - {bmi_status} {bmi_emoji}
+• **Ваша норма калорий: {daily_calories} ккал/день** 🎯
+
+🚀 **Теперь все готово!**
+Отправьте фото вашей еды, и я дам точный анализ с учетом ваших персональных целей!
+
+💡 **Совет:** Норма рассчитана для поддержания текущего веса. Вы можете изменить цель в настройках для похудения или набора массы.
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("🍽️ Начать анализ еды!", callback_data="add_photo_tip")],
+                [InlineKeyboardButton("👤 Мой профиль", callback_data="profile")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(
+                success_message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        else:
+            await query.edit_message_text(
+                "❌ Произошла ошибка при настройке профиля. Попробуйте еще раз.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Попробовать снова", callback_data="start_onboarding")]])
+            )
     
     @staticmethod
     async def complete_onboarding_final(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1771,13 +1843,13 @@ class CalorieBotHandlers:
                 message += f"**Сегодня ({today.strftime('%d.%m')})**\n"
                 message += f"{config.EMOJIS['fire']} Калории: {today_stat.total_calories:.0f} из {db_user.daily_calorie_goal}\n"
                 
-                # Отображаем цель по весу
-                weight_goal_text = {
-                    'lose': '📉 Похудение',
-                    'maintain': '⚖️ Поддержание веса',
-                    'gain': '📈 Набор веса'
-                }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-                message += f"🎯 Цель: {weight_goal_text}\n"
+                # Отображение цели по весу временно отключено
+                # weight_goal_text = {
+                #     'lose': '📉 Похудение',
+                #     'maintain': '⚖️ Поддержание веса',
+                #     'gain': '📈 Набор веса'
+                # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+                # message += f"🎯 Цель: {weight_goal_text}\n"
                 
                 message += f"{config.EMOJIS['muscle']} Белки: {today_stat.total_proteins:.1f}г\n"
                 message += f"🍞 Углеводы: {today_stat.total_carbs:.1f}г\n"
@@ -1866,19 +1938,19 @@ class CalorieBotHandlers:
         if db_user.gender:
             message += f"👤 Пол: {'мужской' if db_user.gender == 'male' else 'женский'}\n"
         
-        # Отображаем цель по весу
-        weight_goal_text = {
-            'lose': '📉 Похудеть',
-            'maintain': '⚖️ Сохранить вес',
-            'gain': '📈 Набрать вес'
-        }.get(db_user.weight_goal, '⚖️ Сохранить вес')
-        message += f"{weight_goal_text}\n"
+        # Отображение цели по весу временно отключено
+        # weight_goal_text = {
+        #     'lose': '📉 Похудеть',
+        #     'maintain': '⚖️ Сохранить вес',
+        #     'gain': '📈 Набрать вес'
+        # }.get(db_user.weight_goal, '⚖️ Сохранить вес')
+        # message += f"{weight_goal_text}\n"
         
         message += f"\nВыберите, что хотите настроить:"
         
         keyboard = [
             [InlineKeyboardButton("🎯 Изменить цель калорий", callback_data="set_calorie_goal")],
-            [InlineKeyboardButton("⚖️ Изменить цель по весу", callback_data="set_weight_goal")],
+            # [InlineKeyboardButton("⚖️ Изменить цель по весу", callback_data="set_weight_goal")],  # временно отключено
             [InlineKeyboardButton(f"{config.EMOJIS['scales']} Обновить вес", callback_data="set_weight")],
             [InlineKeyboardButton("📏 Указать рост", callback_data="set_height")],
             [InlineKeyboardButton("👤 Указать пол и возраст", callback_data="set_personal_info")],
@@ -1929,10 +2001,10 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
-        elif query.data.startswith("weight_goal_"):
-            await CalorieBotHandlers.weight_goal_handler(update, context)
-        elif query.data.startswith("onboarding_weight_goal_"):
-            await CalorieBotHandlers.complete_onboarding_final(update, context)
+        # elif query.data.startswith("weight_goal_"):  # временно отключено
+        #     await CalorieBotHandlers.weight_goal_handler(update, context)
+        # elif query.data.startswith("onboarding_weight_goal_"):  # временно отключено
+        #     await CalorieBotHandlers.complete_onboarding_final(update, context)
         elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data == "cancel_correction":
@@ -2030,25 +2102,25 @@ class CalorieBotHandlers:
         if setting_type == "set_calorie_goal":
             message = f"🎯 **Установка цели калорий**\n\nВведите желаемое количество калорий в день (например: 2000):"
             context.user_data['waiting_for'] = 'calorie_goal'
-        elif setting_type == "set_weight_goal":
-            message = f"⚖️ **Выбор цели по весу**\n\nВыберите вашу цель:"
-            context.user_data['waiting_for'] = 'weight_goal'
-            
-            # Создаем клавиатуру для выбора цели веса
-            keyboard = [
-                [InlineKeyboardButton("📉 Похудеть", callback_data="weight_goal_lose")],
-                [InlineKeyboardButton("⚖️ Сохранить вес", callback_data="weight_goal_maintain")],
-                [InlineKeyboardButton("📈 Набрать вес", callback_data="weight_goal_gain")],
-                [InlineKeyboardButton(f"{config.EMOJIS['back']} Отмена", callback_data="settings")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await query.edit_message_text(
-                message,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
-            )
-            return
+        # elif setting_type == "set_weight_goal":  # временно отключено
+        #     message = f"⚖️ **Выбор цели по весу**\n\nВыберите вашу цель:"
+        #     context.user_data['waiting_for'] = 'weight_goal'
+        #     
+        #     # Создаем клавиатуру для выбора цели веса
+        #     keyboard = [
+        #         [InlineKeyboardButton("📉 Похудеть", callback_data="weight_goal_lose")],
+        #         [InlineKeyboardButton("⚖️ Сохранить вес", callback_data="weight_goal_maintain")],
+        #         [InlineKeyboardButton("📈 Набрать вес", callback_data="weight_goal_gain")],
+        #         [InlineKeyboardButton(f"{config.EMOJIS['back']} Отмена", callback_data="settings")]
+        #     ]
+        #     reply_markup = InlineKeyboardMarkup(keyboard)
+        #     
+        #     await query.edit_message_text(
+        #         message,
+        #         parse_mode=ParseMode.MARKDOWN,
+        #         reply_markup=reply_markup
+        #     )
+        #     return
         elif setting_type == "set_weight":
             message = f"{config.EMOJIS['scales']} **Обновление веса**\n\nВведите ваш текущий вес в килограммах (например: 70.5):"
             context.user_data['waiting_for'] = 'weight'
