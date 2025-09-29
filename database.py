@@ -152,33 +152,43 @@ def migrate_telegram_id_if_needed():
                 logger.info("🔧 Начинаю автоматическую миграцию telegram_id: INTEGER → BIGINT")
                 logger.info("🔧 Это исправит ошибку 'integer out of range' для больших Telegram ID")
                 
-                # Выполняем миграцию в транзакции
-                logger.info("🔧 Запускаю транзакцию миграции...")
-                with connection.begin() as transaction:
-                    migration_steps = [
-                        ("Добавление временной колонки", "ALTER TABLE users ADD COLUMN telegram_id_new BIGINT"),
-                        ("Копирование данных", "UPDATE users SET telegram_id_new = telegram_id"),
-                        ("Удаление ограничения уникальности", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_telegram_id_key"),
-                        ("Удаление индекса", "DROP INDEX IF EXISTS ix_users_telegram_id"), 
-                        ("Удаление старой колонки", "ALTER TABLE users DROP COLUMN telegram_id"),
-                        ("Переименование новой колонки", "ALTER TABLE users RENAME COLUMN telegram_id_new TO telegram_id"),
-                        ("Установка NOT NULL", "ALTER TABLE users ALTER COLUMN telegram_id SET NOT NULL"),
-                        ("Добавление ограничения уникальности", "ALTER TABLE users ADD CONSTRAINT users_telegram_id_key UNIQUE (telegram_id)"),
-                        ("Создание индекса", "CREATE INDEX ix_users_telegram_id ON users (telegram_id)")
-                    ]
-                    
-                    for i, (description, step) in enumerate(migration_steps, 1):
-                        try:
-                            logger.info(f"Шаг {i}/9: {description}")
-                            connection.execute(text(step))
-                        except Exception as step_error:
-                            logger.warning(f"Ошибка на шаге {i} ({description}): {step_error}")
-                            # Некоторые шаги могут не выполниться, продолжаем
-                            continue
-                    
-                    # Транзакция автоматически коммитится при выходе из блока
-                    logger.info("✅ Миграция telegram_id завершена успешно!")
-                    logger.info("🚀 Теперь поддерживаются любые Telegram ID!")
+                # Выполняем миграцию БЕЗ создания новой транзакции (connection уже может быть в транзакции)
+                logger.info("🔧 Выполняем миграцию напрямую (без новой транзакции)...")
+                
+                migration_steps = [
+                    ("Добавление временной колонки", "ALTER TABLE users ADD COLUMN telegram_id_new BIGINT"),
+                    ("Копирование данных", "UPDATE users SET telegram_id_new = telegram_id"),
+                    ("Удаление ограничения уникальности", "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_telegram_id_key"),
+                    ("Удаление индекса", "DROP INDEX IF EXISTS ix_users_telegram_id"), 
+                    ("Удаление старой колонки", "ALTER TABLE users DROP COLUMN telegram_id"),
+                    ("Переименование новой колонки", "ALTER TABLE users RENAME COLUMN telegram_id_new TO telegram_id"),
+                    ("Установка NOT NULL", "ALTER TABLE users ALTER COLUMN telegram_id SET NOT NULL"),
+                    ("Добавление ограничения уникальности", "ALTER TABLE users ADD CONSTRAINT users_telegram_id_key UNIQUE (telegram_id)"),
+                    ("Создание индекса", "CREATE INDEX ix_users_telegram_id ON users (telegram_id)")
+                ]
+                
+                for i, (description, step) in enumerate(migration_steps, 1):
+                    try:
+                        logger.info(f"🔧 Шаг {i}/9: {description}")
+                        connection.execute(text(step))
+                        logger.info(f"✅ Шаг {i}/9 выполнен успешно")
+                    except Exception as step_error:
+                        logger.error(f"❌ Ошибка на шаге {i}/9: {step_error}")
+                        logger.error(f"❌ SQL: {step}")
+                        raise step_error
+                
+                # Принудительно коммитим изменения если connection поддерживает commit
+                try:
+                    if hasattr(connection, 'commit'):
+                        connection.commit()
+                        logger.info("✅ Изменения зафиксированы в базе данных")
+                    else:
+                        logger.info("✅ Connection в режиме autocommit")
+                except Exception as commit_error:
+                    logger.warning(f"⚠️ Не удалось выполнить commit: {commit_error}")
+                
+                logger.info("✅ Миграция telegram_id завершена успешно!")
+                logger.info("🚀 Теперь поддерживаются любые Telegram ID!")
             
     except Exception as e:
         logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА при проверке/миграции telegram_id: {e}")
@@ -196,12 +206,8 @@ def create_tables():
     Base.metadata.create_all(bind=engine)
     logger.info("Таблицы базы данных созданы")
     
-    # Выполняем автоматическую миграцию если необходимо
-    try:
-        migrate_telegram_id_if_needed()
-    except Exception as e:
-        logger.error(f"Ошибка при выполнении миграции: {e}")
-        logger.info("Бот продолжит работу с текущей схемой")
+    # Примечание: Миграция telegram_id теперь выполняется в main() функции
+    # Убрали дублирование вызова migrate_telegram_id_if_needed() отсюда
 
 def get_db():
     """Получение сессии базы данных"""
