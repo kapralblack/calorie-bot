@@ -41,6 +41,10 @@ def log_database_info():
 BOT_NAME = os.getenv('BOT_NAME', 'Калории Бот 🍎')
 ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', '')
 
+# FatSecret API Configuration
+FATSECRET_CONSUMER_KEY = os.getenv('FATSECRET_CONSUMER_KEY', '')
+FATSECRET_CONSUMER_SECRET = os.getenv('FATSECRET_CONSUMER_SECRET', '')
+
 # Server Configuration (для деплоя)
 PORT = int(os.getenv('PORT', 8000))
 HOST = os.getenv('HOST', '0.0.0.0')

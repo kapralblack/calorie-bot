@@ -8,6 +8,7 @@ from io import BytesIO
 from PIL import Image
 import config
 import logging
+from food_database import food_database
 import hashlib
 from datetime import datetime, timedelta
 
@@ -278,10 +279,15 @@ class CalorieAnalyzer:
             logger.info(f"AI ответ длиной {len(content)} символов: {content[:200]}...")
             
             # Пытаемся извлечь JSON из ответа
-            result = self._parse_ai_response(content)
-            logger.info("Анализ завершен успешно")
+            ai_result = self._parse_ai_response(content)
             
-            return result
+            # Улучшаем анализ с помощью базы данных продуктов
+            enhanced_result = self.enhance_analysis_with_database(ai_result)
+            
+            logger.info(f"✅ Анализ завершен. Калории: {enhanced_result.get('total_calories', 0)} "
+                       f"(найдено в базе: {enhanced_result.get('database_matches', 0)}/{enhanced_result.get('total_items', 0)})")
+            
+            return enhanced_result
             
         except Exception as e:
             import traceback
@@ -434,11 +440,18 @@ class CalorieAnalyzer:
                 name = translate_food_name(item.get('name', 'Неизвестное блюдо'))
                 calories = item.get('calories', 0)
                 weight = item.get('estimated_weight', '')
+                source = item.get('source', '🤖 AI анализ')
                 
                 message += f"{i}. {name}"
                 if weight:
                     message += f" (~{weight})"
-                message += f" - {calories:.0f} ккал\n"
+                message += f" - {calories:.0f} ккал"
+                
+                # Показываем источник данных
+                if source != '🤖 AI анализ':
+                    message += f" {source}"
+                
+                message += "\n"
         
         # Уверенность AI
         confidence = result.get('confidence', 0)
@@ -456,6 +469,86 @@ class CalorieAnalyzer:
             message += f"\n\n⚠️ *Примечание: {result['error']}*"
         
         return message
+    
+    def enhance_analysis_with_database(self, ai_result):
+        """Улучшает анализ ИИ с помощью базы данных продуктов"""
+        logger.info("🔍 Улучшаем анализ с помощью базы данных продуктов...")
+        
+        try:
+            enhanced_items = []
+            total_calories_enhanced = 0
+            database_matches = 0
+            
+            for item in ai_result.get('food_items', []):
+                original_name = item.get('name', '')
+                estimated_weight = self._extract_weight_from_item(item)
+                
+                logger.info(f"🔍 Ищем '{original_name}' в базе данных (вес: {estimated_weight}г)")
+                
+                # Поиск в базе данных
+                nutrition_info = food_database.get_nutrition_info(original_name, estimated_weight)
+                
+                if nutrition_info:
+                    # Найдено в базе данных - используем точные данные
+                    database_matches += 1
+                    enhanced_item = {
+                        'name': nutrition_info['name'],
+                        'estimated_weight': f"{nutrition_info['weight_g']}г",
+                        'calories': nutrition_info['total_calories'],
+                        'proteins': nutrition_info.get('protein', item.get('proteins', 0)),
+                        'carbs': nutrition_info.get('carbs', item.get('carbs', 0)),
+                        'fats': nutrition_info.get('fat', item.get('fats', 0)),
+                        'source': f"📊 {nutrition_info['source']}",
+                        'match_score': nutrition_info.get('match_score', 0),
+                        'calories_per_100g': nutrition_info['calories_per_100g']
+                    }
+                    
+                    logger.info(f"✅ Найдено в {nutrition_info['source']}: {nutrition_info['name']} "
+                              f"= {nutrition_info['total_calories']} ккал")
+                else:
+                    # Не найдено в базе - используем данные ИИ
+                    enhanced_item = item.copy()
+                    enhanced_item['source'] = "🤖 AI анализ"
+                    logger.info(f"⚠️ Не найдено в базе: '{original_name}', используем AI анализ")
+                
+                enhanced_items.append(enhanced_item)
+                total_calories_enhanced += enhanced_item.get('calories', 0)
+            
+            # Создаем улучшенный результат
+            enhanced_result = ai_result.copy()
+            enhanced_result['food_items'] = enhanced_items
+            enhanced_result['total_calories'] = round(total_calories_enhanced)
+            enhanced_result['database_matches'] = database_matches
+            enhanced_result['total_items'] = len(enhanced_items)
+            
+            # Увеличиваем confidence если найдены совпадения в базе
+            original_confidence = enhanced_result.get('confidence', 70)
+            if database_matches > 0:
+                confidence_boost = min(20, database_matches * 10)  # До +20% за совпадения
+                enhanced_result['confidence'] = min(95, original_confidence + confidence_boost)
+                logger.info(f"📈 Confidence повышен с {original_confidence}% до {enhanced_result['confidence']}% "
+                          f"(найдено {database_matches}/{len(enhanced_items)} в базе)")
+            
+            logger.info(f"✅ Анализ улучшен: {database_matches}/{len(enhanced_items)} продуктов найдено в базе")
+            return enhanced_result
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при улучшении анализа: {e}")
+            # Возвращаем оригинальный результат при ошибке
+            return ai_result
+    
+    def _extract_weight_from_item(self, item):
+        """Извлекает вес в граммах из описания продукта"""
+        try:
+            weight_str = item.get('estimated_weight', '0г')
+            # Удаляем 'г' и пробелы, конвертируем в float
+            weight = float(weight_str.replace('г', '').strip())
+            return max(weight, 50)  # Минимум 50г
+        except:
+            # Если не удалось извлечь, используем калории для оценки
+            calories = item.get('calories', 100)
+            # Примерная оценка: 2.5 ккал/г для среднего продукта
+            return max(50, round(calories / 2.5))
 
 # Создаем глобальный экземпляр анализатора
 analyzer = CalorieAnalyzer()
