@@ -28,7 +28,7 @@ class User(Base):
     age = Column(Integer)
     gender = Column(String(10))  # male/female
     activity_level = Column(String(20), default='moderate')  # low/moderate/high
-    # weight_goal = Column(String(20), default='maintain')  # lose/maintain/gain - временно отключено
+    weight_goal = Column(String(20), default='maintain')  # lose/maintain/gain
     # onboarding_completed = Column(Boolean, default=False)  # Временно отключено для совместимости
     
     # Связи
