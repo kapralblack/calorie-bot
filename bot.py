@@ -1634,6 +1634,32 @@ class CalorieBotHandlers:
             )
     
     @staticmethod
+    async def migrate_goals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для миграции поля weight_goal в базу данных"""
+        user = update.effective_user
+        
+        # Проверяем, что это админ
+        if user.id != 247485745:  # Замените на ваш Telegram ID
+            await update.message.reply_text("❌ У вас нет прав для выполнения этой команды")
+            return
+        
+        try:
+            # Подключаемся к базе данных
+            from database import SessionLocal
+            db = SessionLocal()
+            
+            # Выполняем миграцию
+            db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS weight_goal VARCHAR(20) DEFAULT 'maintain'")
+            db.commit()
+            
+            await update.message.reply_text("✅ Поле weight_goal успешно добавлено в базу данных!")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при миграции: {str(e)}")
+        finally:
+            db.close()
+    
+    @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
         help_message = f"""
@@ -2967,6 +2993,7 @@ def main():
     application.add_handler(CommandHandler("adminuser", CalorieBotHandlers.admin_user_command))
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
+    application.add_handler(CommandHandler("migrate_goals", CalorieBotHandlers.migrate_goals_command))
     application.add_handler(CommandHandler("forcemigration", CalorieBotHandlers.force_migration_command))
     application.add_handler(CommandHandler("debugmigration", CalorieBotHandlers.debug_migration_command))
     application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))
