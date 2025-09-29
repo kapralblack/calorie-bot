@@ -2019,7 +2019,7 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.stats_handler(update, context)
         elif query.data == "settings":
             await CalorieBotHandlers.settings_handler(update, context)
-        elif query.data == "goals":
+        elif query.data == "goals" or query.data == "goals_menu":
             await CalorieBotHandlers.goals_command(update, context)
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
@@ -2387,7 +2387,7 @@ class CalorieBotHandlers:
         message += "\n\n🚀 **Теперь ваша цель калорий пересчитана!**"
         
         keyboard = [
-            [InlineKeyboardButton("🎯 Мои цели", callback_data="goals")],
+            [InlineKeyboardButton("🎯 Мои цели", callback_data="goals_menu")],
             [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
             [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
         ]
