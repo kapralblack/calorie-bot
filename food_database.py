@@ -224,6 +224,14 @@ class RussianFoodDatabase:
         'гуляш': {'calories_per_100g': 180, 'typical_serving': 200, 'category': 'main'},
         'плов': {'calories_per_100g': 190, 'typical_serving': 250, 'category': 'main'},
         
+        # Дополнительные продукты
+        'сок': {'calories_per_100g': 45, 'typical_serving': 250, 'category': 'drink'},
+        'банановые чипсы': {'calories_per_100g': 519, 'typical_serving': 30, 'category': 'snack'},
+        'миндаль': {'calories_per_100g': 579, 'typical_serving': 30, 'category': 'nuts'},
+        'изюм': {'calories_per_100g': 299, 'typical_serving': 50, 'category': 'snack'},
+        'помидор': {'calories_per_100g': 18, 'typical_serving': 100, 'category': 'vegetable'},
+        'томат': {'calories_per_100g': 18, 'typical_serving': 100, 'category': 'vegetable'},
+        
         # Рестораны
         'теремок_блин': {'calories_per_100g': 280, 'typical_serving': 220, 'category': 'restaurant'},
         'теремок_борщ': {'calories_per_100g': 85, 'typical_serving': 300, 'category': 'restaurant'},
@@ -233,6 +241,67 @@ class RussianFoodDatabase:
     def search_food(self, query: str, max_results: int = 5) -> List[Dict]:
         """Поиск в российской базе данных"""
         query = query.lower().strip()
+        
+        # Словарь переводов английских названий на русские
+        english_to_russian = {
+            # Основные блюда
+            'borscht': 'борщ',
+            'borscht with sour cream': 'борщ',
+            'dumplings': 'пельмени', 
+            'dumplings with sour cream': 'пельмени',
+            'stuffed crepe': 'блины',
+            'crepe': 'блины',
+            'blini': 'блины',
+            'pancake': 'блины',
+            'buckwheat': 'гречка',
+            'rice': 'рис',
+            'oatmeal': 'овсянка',
+            
+            # Напитки
+            'juice': 'сок',
+            'glass of juice': 'сок',
+            'compote': 'компот',
+            'morse': 'морс',
+            'kvass': 'квас',
+            'kissel': 'кисель',
+            
+            # Мясные блюда
+            'cutlets': 'котлеты',
+            'meatballs': 'тефтели',
+            'goulash': 'гуляш',
+            'pilaf': 'плов',
+            
+            # Супы
+            'shchi': 'щи',
+            'solyanka': 'солянка',
+            'kharcho': 'харчо',
+            'rassolnik': 'рассольник',
+            
+            # Другие блюда
+            'vareniki': 'вареники',
+            'mantry': 'мантры',
+            'khinkali': 'хинкали',
+            'syrniki': 'сырники',
+            'oladyi': 'оладьи',
+            
+            # Орехи и снеки  
+            'dried banana chips': 'банановые чипсы',
+            'banana chips': 'банановые чипсы',
+            'almonds': 'миндаль',
+            'raisins': 'изюм',
+            
+            # Овощи
+            'sliced tomato': 'помидор',
+            'tomato': 'помидор',
+            'tomatoes': 'помидор'
+        }
+        
+        # Переводим на русский если нужно
+        original_query = query
+        if query in english_to_russian:
+            translated_query = english_to_russian[query]
+            logger.info(f"🔄 Переведено '{original_query}' → '{translated_query}'")
+            query = translated_query
         
         # Точное совпадение
         if query in self.RUSSIAN_FOODS:
@@ -276,19 +345,32 @@ class FoodDatabaseManager:
     
     def search_food(self, query: str, prefer_russian: bool = True) -> List[Dict]:
         """Поиск продукта во всех доступных базах"""
+        logger.info(f"🔍 FoodDatabaseManager: ищем '{query}' во всех базах")
         all_results = []
         
         # Сначала ищем в российской базе
         if prefer_russian:
+            logger.info(f"🇷🇺 Поиск в российской базе данных...")
             russian_results = self.russian_db.search_food(query)
-            all_results.extend(russian_results)
+            if russian_results:
+                logger.info(f"✅ Российская база: найдено {len(russian_results)} результатов")
+                all_results.extend(russian_results)
+            else:
+                logger.info(f"❌ Российская база: ничего не найдено")
         
         # Затем в FatSecret (если есть API ключи)
         if self.fatsecret.enabled:
+            logger.info(f"🌍 Поиск в FatSecret API...")
             fatsecret_results = self.fatsecret.search_food(query)
             for result in fatsecret_results:
                 result['source'] = 'fatsecret'
-            all_results.extend(fatsecret_results)
+            if fatsecret_results:
+                logger.info(f"✅ FatSecret: найдено {len(fatsecret_results)} результатов")
+                all_results.extend(fatsecret_results)
+            else:
+                logger.info(f"❌ FatSecret: ничего не найдено")
+        else:
+            logger.info(f"⚠️ FatSecret API отключен (нет ключей)")
         
         # Сортируем по релевантности (российские продукты приоритетнее)
         def sort_key(item):
@@ -305,13 +387,16 @@ class FoodDatabaseManager:
     
     def get_nutrition_info(self, food_name: str, estimated_weight_g: float) -> Dict:
         """Получает точную информацию о калориях и БЖУ для продукта"""
+        logger.info(f"📊 Получаем питательную информацию для '{food_name}' ({estimated_weight_g}г)")
         search_results = self.search_food(food_name)
         
         if not search_results:
+            logger.info(f"❌ Питательная информация не найдена для '{food_name}'")
             return None
         
         # Берем лучший результат
         best_match = search_results[0]
+        logger.info(f"🎯 Лучший результат: {best_match.get('name')} из {best_match.get('source')}")
         
         if best_match.get('source') == 'russian_database':
             # Используем данные из российской базы
