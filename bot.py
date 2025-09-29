@@ -41,6 +41,7 @@ class CalorieBotHandlers:
                 KeyboardButton("📅 История")
             ],
             [
+                KeyboardButton("🎯 Мои цели"),
                 KeyboardButton("❓ Помощь")
             ],
             [
