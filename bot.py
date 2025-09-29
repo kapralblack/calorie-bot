@@ -1873,14 +1873,14 @@ class CalorieBotHandlers:
                 message += f"**Сегодня ({today.strftime('%d.%m')})**\n"
                 message += f"{config.EMOJIS['fire']} Калории: {today_stat.total_calories:.0f} из {db_user.daily_calorie_goal}\n"
                 
-                # Отображение цели по весу временно отключено
-                # weight_goal_text = {
-                #     'lose': '📉 Похудение',
-                #     'maintain': '⚖️ Поддержание веса',
-                #     'gain': '📈 Набор веса',
-                #     'recomp': '💪 Рекомпозиция'
-                # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-                # message += f"🎯 Цель: {weight_goal_text}\n"
+                # Отображаем цель по весу
+                weight_goal_text = {
+                    'lose': '📉 Похудение',
+                    'maintain': '⚖️ Поддержание веса',
+                    'gain': '📈 Набор веса',
+                    'recomp': '💪 Рекомпозиция'
+                }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+                message += f"🎯 Цель: {weight_goal_text}\n"
                 
                 message += f"{config.EMOJIS['muscle']} Белки: {today_stat.total_proteins:.1f}г\n"
                 message += f"🍞 Углеводы: {today_stat.total_carbs:.1f}г\n"
@@ -1969,20 +1969,20 @@ class CalorieBotHandlers:
         if db_user.gender:
             message += f"👤 Пол: {'мужской' if db_user.gender == 'male' else 'женский'}\n"
         
-        # Отображение цели по весу временно отключено
-        # weight_goal_text = {
-        #     'lose': '📉 Похудение',
-        #     'maintain': '⚖️ Поддержание веса',
-        #     'gain': '📈 Набор веса',
-        #     'recomp': '💪 Рекомпозиция'
-        # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-        # message += f"🎯 Цель: {weight_goal_text}\n"
+        # Отображаем цель по весу
+        weight_goal_text = {
+            'lose': '📉 Похудение',
+            'maintain': '⚖️ Поддержание веса',
+            'gain': '📈 Набор веса',
+            'recomp': '💪 Рекомпозиция'
+        }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+        message += f"🎯 Цель: {weight_goal_text}\n"
         
         message += f"\nВыберите, что хотите настроить:"
         
         keyboard = [
             [InlineKeyboardButton("🎯 Изменить цель калорий", callback_data="set_calorie_goal")],
-            # [InlineKeyboardButton("🎯 Изменить цель по весу", callback_data="goals")],  # временно отключено
+            [InlineKeyboardButton("🎯 Изменить цель по весу", callback_data="goals")],
             [InlineKeyboardButton(f"{config.EMOJIS['scales']} Обновить вес", callback_data="set_weight")],
             [InlineKeyboardButton("📏 Указать рост", callback_data="set_height")],
             [InlineKeyboardButton("👤 Указать пол и возраст", callback_data="set_personal_info")],
