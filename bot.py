@@ -10,7 +10,7 @@ import threading
 import time
 from io import BytesIO
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from telegram.constants import ParseMode
 
@@ -27,6 +27,30 @@ logger = logging.getLogger(__name__)
 
 class CalorieBotHandlers:
     """Обработчики команд телеграм-бота"""
+    
+    @staticmethod
+    def get_main_keyboard():
+        """Создает постоянную клавиатуру для главного меню"""
+        keyboard = [
+            [
+                KeyboardButton("🍽️ Анализ еды"),
+                KeyboardButton("📊 Статистика")
+            ],
+            [
+                KeyboardButton("⚙️ Настройки"),
+                KeyboardButton("📅 История")
+            ],
+            [
+                KeyboardButton("❓ Помощь"),
+                KeyboardButton("🏠 Главное меню")
+            ]
+        ]
+        return ReplyKeyboardMarkup(
+            keyboard, 
+            resize_keyboard=True, 
+            one_time_keyboard=False,
+            input_field_placeholder="Отправьте фото еды или выберите действие..."
+        )
     
     @staticmethod
     async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -74,36 +98,13 @@ class CalorieBotHandlers:
 Выберите действие или отправьте фото еды:
 """
         
-        # Создаем красивое структурированное меню
-        keyboard = [
-            # Верхний ряд - главные действия
-            [
-                InlineKeyboardButton("📸 Анализ фото", callback_data="add_photo_tip"),
-                InlineKeyboardButton("👤 Мой профиль", callback_data="profile")
-            ],
-            # Второй ряд - статистика
-            [
-                InlineKeyboardButton("📊 Статистика", callback_data="stats"),
-                InlineKeyboardButton("📈 Детальные отчеты", callback_data="detailed_stats")
-            ],
-            # Третий ряд - управление
-            [
-                InlineKeyboardButton("⚙️ Настройки", callback_data="settings"),
-                InlineKeyboardButton("🎯 Моя цель", callback_data="my_goal")
-            ],
-            # Четвертый ряд - помощь и статус
-            [
-                InlineKeyboardButton("💾 Статус данных", callback_data="data_status"),
-                InlineKeyboardButton("❓ Помощь", callback_data="help")
-            ]
-        ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Используем постоянную клавиатуру вместо inline кнопок
+        reply_markup = CalorieBotHandlers.get_main_keyboard()
         
         # ИСПРАВЛЕНИЕ: Проверяем, это callback query или обычное сообщение
         if update.callback_query:
-            # Это нажатие кнопки
-            await update.callback_query.edit_message_text(
+            # Это нажатие кнопки - отправляем новое сообщение с постоянной клавиатурой
+            await update.callback_query.message.reply_text(
                 welcome_message,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup
@@ -1441,6 +1442,49 @@ class CalorieBotHandlers:
         )
     
     @staticmethod
+    async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /stats - статистика питания"""
+        await CalorieBotHandlers.stats_handler(update, context)
+    
+    @staticmethod
+    async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /settings - настройки профиля"""
+        await CalorieBotHandlers.settings_handler(update, context)
+    
+    @staticmethod
+    async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда истории питания"""
+        user = update.effective_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Получаем последние записи
+        from database import FoodEntry
+        db = DatabaseManager.SessionLocal()
+        try:
+            recent_entries = db.query(FoodEntry).filter(
+                FoodEntry.user_id == db_user.id
+            ).order_by(FoodEntry.created_at.desc()).limit(10).all()
+            
+            if not recent_entries:
+                message = "📅 **История питания пуста**\n\nНачните с отправки фото еды!"
+            else:
+                message = "📅 **Последние записи:**\n\n"
+                for entry in recent_entries:
+                    date_str = entry.created_at.strftime("%d.%m %H:%M")
+                    message += f"• {date_str} - {entry.calories:.0f} ккал\n"
+                    if entry.food_name:
+                        message += f"  {entry.food_name}\n"
+                    message += "\n"
+            
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=CalorieBotHandlers.get_main_keyboard()
+            )
+        finally:
+            db.close()
+    
+    @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
         help_message = f"""
@@ -1509,10 +1553,12 @@ class CalorieBotHandlers:
                 reply_markup=reply_markup
             )
         else:
-            await message.reply_text(
+            # Используем постоянную клавиатуру для обычных сообщений
+            main_keyboard = CalorieBotHandlers.get_main_keyboard()
+            await update.message.reply_text(
                 help_message,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=main_keyboard
             )
     
     @staticmethod
@@ -1688,6 +1734,9 @@ class CalorieBotHandlers:
                 reply_markup=reply_markup
             )
         else:
+            # Используем постоянную клавиатуру
+            reply_markup = CalorieBotHandlers.get_main_keyboard()
+            
             # Если это callback после анализа фото или обычное сообщение - отправляем новое сообщение
             if update.callback_query:
                 await update.callback_query.answer()  # Закрываем "часики" на кнопке
@@ -1745,6 +1794,7 @@ class CalorieBotHandlers:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Используем постоянную клавиатуру для обычных сообщений
         if update.callback_query:
             await update.callback_query.edit_message_text(
                 message,
@@ -1752,10 +1802,12 @@ class CalorieBotHandlers:
                 reply_markup=reply_markup
             )
         else:
+            # Для обычных сообщений используем постоянную клавиатуру
+            main_keyboard = CalorieBotHandlers.get_main_keyboard()
             await update.message.reply_text(
                 message,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=main_keyboard
             )
     
     @staticmethod
@@ -1909,8 +1961,21 @@ class CalorieBotHandlers:
         user = update.effective_user
         text = update.message.text
         
+        # Обработка кнопок постоянной клавиатуры
+        if text == "🍽️ Анализ еды":
+            await CalorieBotHandlers.add_photo_tip_handler(update, context)
+        elif text == "📊 Статистика":
+            await CalorieBotHandlers.stats_command(update, context)
+        elif text == "⚙️ Настройки":
+            await CalorieBotHandlers.settings_command(update, context)
+        elif text == "📅 История":
+            await CalorieBotHandlers.history_command(update, context)
+        elif text == "❓ Помощь":
+            await CalorieBotHandlers.help_command(update, context)
+        elif text == "🏠 Главное меню":
+            await CalorieBotHandlers.start_command(update, context)
         # Проверяем, ожидаем ли мы ввод настроек
-        if context.user_data.get('waiting_for') == 'correction':
+        elif context.user_data.get('waiting_for') == 'correction':
             await CalorieBotHandlers.process_correction(update, context, text)
         elif context.user_data.get('waiting_for') == 'age':
             await CalorieBotHandlers.onboarding_height(update, context)
