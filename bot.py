@@ -41,7 +41,6 @@ class CalorieBotHandlers:
                 KeyboardButton("📅 История")
             ],
             [
-                KeyboardButton("🎯 Мои цели"),
                 KeyboardButton("❓ Помощь")
             ],
             [
@@ -1872,14 +1871,14 @@ class CalorieBotHandlers:
                 message += f"**Сегодня ({today.strftime('%d.%m')})**\n"
                 message += f"{config.EMOJIS['fire']} Калории: {today_stat.total_calories:.0f} из {db_user.daily_calorie_goal}\n"
                 
-                # Отображаем цель по весу
-                weight_goal_text = {
-                    'lose': '📉 Похудение',
-                    'maintain': '⚖️ Поддержание веса',
-                    'gain': '📈 Набор веса',
-                    'recomp': '💪 Рекомпозиция'
-                }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-                message += f"🎯 Цель: {weight_goal_text}\n"
+                # Отображение цели по весу временно отключено
+                # weight_goal_text = {
+                #     'lose': '📉 Похудение',
+                #     'maintain': '⚖️ Поддержание веса',
+                #     'gain': '📈 Набор веса',
+                #     'recomp': '💪 Рекомпозиция'
+                # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+                # message += f"🎯 Цель: {weight_goal_text}\n"
                 
                 message += f"{config.EMOJIS['muscle']} Белки: {today_stat.total_proteins:.1f}г\n"
                 message += f"🍞 Углеводы: {today_stat.total_carbs:.1f}г\n"
@@ -1968,20 +1967,20 @@ class CalorieBotHandlers:
         if db_user.gender:
             message += f"👤 Пол: {'мужской' if db_user.gender == 'male' else 'женский'}\n"
         
-        # Отображаем цель по весу
-        weight_goal_text = {
-            'lose': '📉 Похудение',
-            'maintain': '⚖️ Поддержание веса',
-            'gain': '📈 Набор веса',
-            'recomp': '💪 Рекомпозиция'
-        }.get(db_user.weight_goal, '⚖️ Поддержание веса')
-        message += f"🎯 Цель: {weight_goal_text}\n"
+        # Отображение цели по весу временно отключено
+        # weight_goal_text = {
+        #     'lose': '📉 Похудение',
+        #     'maintain': '⚖️ Поддержание веса',
+        #     'gain': '📈 Набор веса',
+        #     'recomp': '💪 Рекомпозиция'
+        # }.get(db_user.weight_goal, '⚖️ Поддержание веса')
+        # message += f"🎯 Цель: {weight_goal_text}\n"
         
         message += f"\nВыберите, что хотите настроить:"
         
         keyboard = [
             [InlineKeyboardButton("🎯 Изменить цель калорий", callback_data="set_calorie_goal")],
-            [InlineKeyboardButton("🎯 Изменить цель по весу", callback_data="goals")],
+            # [InlineKeyboardButton("🎯 Изменить цель по весу", callback_data="goals")],  # временно отключено
             [InlineKeyboardButton(f"{config.EMOJIS['scales']} Обновить вес", callback_data="set_weight")],
             [InlineKeyboardButton("📏 Указать рост", callback_data="set_height")],
             [InlineKeyboardButton("👤 Указать пол и возраст", callback_data="set_personal_info")],
@@ -2018,8 +2017,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.stats_handler(update, context)
         elif query.data == "settings":
             await CalorieBotHandlers.settings_handler(update, context)
-        elif query.data == "goals":
-            await CalorieBotHandlers.goals_command(update, context)
+        # elif query.data == "goals":  # временно отключено
+        #     await CalorieBotHandlers.goals_command(update, context)
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
         elif query.data == "add_more":
@@ -2034,8 +2033,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.detailed_stats_handler(update, context)
         elif query.data.startswith("set_"):
             await CalorieBotHandlers.settings_input_handler(update, context)
-        elif query.data.startswith("goal_"):
-            await CalorieBotHandlers.goal_selection_handler(update, context)
+        # elif query.data.startswith("goal_"):  # временно отключено
+        #     await CalorieBotHandlers.goal_selection_handler(update, context)
         elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data == "cancel_correction":
@@ -2413,8 +2412,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.settings_command(update, context)
         elif text == "📅 История":
             await CalorieBotHandlers.history_command(update, context)
-        elif text == "🎯 Мои цели":
-            await CalorieBotHandlers.goals_command(update, context)
+        # elif text == "🎯 Мои цели":  # временно отключено
+        #     await CalorieBotHandlers.goals_command(update, context)
         elif text == "❓ Помощь":
             await CalorieBotHandlers.help_command(update, context)
         elif text == "🏠 Главное меню":
