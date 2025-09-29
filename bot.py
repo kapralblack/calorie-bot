@@ -1482,9 +1482,18 @@ class CalorieBotHandlers:
                     message = "📅 **Последние записи:**\n\n"
                     for entry in recent_entries:
                         date_str = entry.created_at.strftime("%d.%m %H:%M")
-                        message += f"• {date_str} - {entry.calories:.0f} ккал\n"
-                        if entry.food_name:
-                            message += f"  {entry.food_name}\n"
+                        message += f"• {date_str} - {entry.total_calories:.0f} ккал\n"
+                        # Пытаемся извлечь название еды из JSON
+                        try:
+                            import json
+                            if entry.food_items:
+                                food_data = json.loads(entry.food_items)
+                                if isinstance(food_data, list) and len(food_data) > 0:
+                                    first_item = food_data[0]
+                                    if isinstance(first_item, dict) and 'name' in first_item:
+                                        message += f"  {first_item['name']}\n"
+                        except:
+                            pass  # Если не удалось распарсить JSON, просто пропускаем
                         message += "\n"
                 
                 await update.message.reply_text(
