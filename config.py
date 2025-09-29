@@ -68,9 +68,11 @@ CRITICAL FOOD IDENTIFICATION RULES:
    - BREAD: white bread, rye bread, toast, rolls, sandwiches
    - VEGETABLES: potatoes, carrots, salad, tomatoes, onions
    - GRAINS: rice, pasta, cereals, porridge
-   - DAIRY: cheese, milk, yogurt, butter
+   - DAIRY: cheese, milk, yogurt, butter, sour cream
    - BEVERAGES: tea, coffee, juice, water, soda
    - SWEETS: cookies, cake, chocolate, candy
+   - PANCAKES: thin crepes (блины) vs thick cottage cheese pancakes (сырники)
+   - RUSSIAN DISHES: syrniki (thick, golden, cottage cheese pancakes), blini (thin crepes)
 
 COMPLEX DISH ANALYSIS:
 For layered/composite dishes (casseroles, pies, gratins, stuffed items):
@@ -113,6 +115,9 @@ NAMING REQUIREMENTS:
 - INCLUDE COOKING METHOD: "fried", "grilled", "boiled", "baked"
 - SPECIFY VARIETY: "white rice", "brown bread", "green salad"
 - AVOID CONFUSION: Never call meat "tea" or vegetables "meat"
+- RUSSIAN PANCAKES: Distinguish between "blini" (thin crepes) and "syrniki" (thick cottage cheese pancakes)
+- SYRNIKI IDENTIFICATION: Thick, golden-brown, round, cottage cheese pancakes (not thin crepes)
+- BLINI IDENTIFICATION: Thin, flat, crepe-like pancakes (not thick cottage cheese pancakes)
 
 RESPONSE FORMAT - strict JSON:
 {

@@ -204,7 +204,7 @@ class RussianFoodDatabase:
         # Блины и оладьи (калории на основе FatSecret)
         'блины': {'calories_per_100g': 267, 'typical_serving': 250, 'category': 'main'},  # 590 ккал / 221г = 267 ккал/100г
         'оладьи': {'calories_per_100g': 260, 'typical_serving': 120, 'category': 'main'},
-        'сырники': {'calories_per_100g': 280, 'typical_serving': 120, 'category': 'main'},
+        'сырники': {'calories_per_100g': 280, 'typical_serving': 300, 'category': 'main'},  # Сырники калорийнее блинов
         
         # Каши
         'гречка': {'calories_per_100g': 132, 'typical_serving': 200, 'category': 'side'},
@@ -258,6 +258,16 @@ class RussianFoodDatabase:
             'crepe': 'блины',
             'blini': 'блины',
             'pancake': 'блины',
+            
+            # Сырники
+            'cottage cheese pancakes': 'сырники',
+            'syrniki': 'сырники',
+            'cheese pancakes': 'сырники',
+            'thick pancakes': 'сырники',
+            'golden pancakes': 'сырники',
+            'fried cottage cheese': 'сырники',
+            'cottage cheese fritters': 'сырники',
+            
             'buckwheat': 'гречка',
             'rice': 'рис',
             'oatmeal': 'овсянка',
@@ -358,6 +368,7 @@ class FoodDatabaseManager:
                 'борщ': 300,  # 271г в FatSecret, но обычно 300г порция
                 'пельмени': 200,  # 150г в FatSecret, но обычно 200г порция  
                 'блины': 250,  # 221г в FatSecret, но обычно 250г порция
+                'сырники': 300,  # Сырники обычно порция 300г (7 штук по ~43г)
                 'морс': 300,  # 300мл в FatSecret
                 'сметана': 50,  # 50г в FatSecret
                 'сок': 250,  # 250мл типичная порция
@@ -367,6 +378,7 @@ class FoodDatabaseManager:
                 'борщ': 1.0,  # Борщ: 85 ккал/100г * 3 = 255 ккал (близко к FatSecret 252)
                 'пельмени': 1.0,  # Пельмени: 280 ккал/100г * 2 = 560 ккал (FatSecret 296 для 150г)
                 'блины': 1.0,  # Блины: 200 ккал/100г * 2.5 = 500 ккал (FatSecret 590 для 221г)
+                'сырники': 1.0,  # Сырники: 280 ккал/100г * 3 = 840 ккал (калорийнее блинов)
                 'морс': 1.0,  # Морс: 45 ккал/100г * 3 = 135 ккал (FatSecret 120 для 300мл)
                 'сметана': 1.0,  # Сметана: 200 ккал/100г * 0.5 = 100 ккал (FatSecret 101 для 50г)
             }

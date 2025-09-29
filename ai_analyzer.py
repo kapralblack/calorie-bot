@@ -42,6 +42,15 @@ FOOD_TRANSLATIONS = {
     'meat pancakes': 'блины с мясом',
     'stuffed pancakes': 'блины с начинкой',
     
+    # Сырники (cottage cheese pancakes)
+    'cottage cheese pancakes': 'сырники',
+    'syrniki': 'сырники',
+    'cheese pancakes': 'сырники',
+    'thick pancakes': 'сырники',
+    'golden pancakes': 'сырники',
+    'fried cottage cheese': 'сырники',
+    'cottage cheese fritters': 'сырники',
+    
     # Рыба
     'sliced salmon': 'кусочки лосося',
     'salmon slices': 'кусочки лосося',
@@ -140,7 +149,13 @@ FOOD_TRANSLATIONS = {
     'stuffed zucchini': 'фаршированные кабачки',
     'baked stuffed': 'запеченное фаршированное',
     'oven-baked': 'запеченное в духовке',
-    'baked dish': 'запеченное блюдо'
+    'baked dish': 'запеченное блюдо',
+    
+    # Молочные продукты
+    'sour cream': 'сметана',
+    'smetana': 'сметана',
+    'white cream': 'сметана',
+    'dairy cream': 'сметана'
 }
 
 def translate_food_name(english_name):
