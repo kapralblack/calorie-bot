@@ -2019,7 +2019,10 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.stats_handler(update, context)
         elif query.data == "settings":
             await CalorieBotHandlers.settings_handler(update, context)
-        elif query.data == "goals" or query.data == "goals_menu":
+        elif query.data == "goals":
+            await CalorieBotHandlers.goals_command(update, context)
+        elif query.data == "goals_menu":
+            # Открываем меню выбора целей
             await CalorieBotHandlers.goals_command(update, context)
         elif query.data == "help":
             await CalorieBotHandlers.help_command(update, context)
@@ -2251,7 +2254,14 @@ class CalorieBotHandlers:
     @staticmethod
     async def goals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда управления целями по весу"""
-        user = update.effective_user
+        # Обрабатываем как callback_query, так и обычное сообщение
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            user = query.from_user
+        else:
+            user = update.effective_user
+            
         db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
         
         # Получаем текущую цель
@@ -2305,11 +2315,19 @@ class CalorieBotHandlers:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            message,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
+        # Отправляем сообщение в зависимости от типа update
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
     
     @staticmethod
     async def goal_selection_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
