@@ -1469,8 +1469,8 @@ class CalorieBotHandlers:
             db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
             
             # Получаем последние записи
-            from database import FoodEntry
-            db = DatabaseManager.SessionLocal()
+            from database import SessionLocal, FoodEntry
+            db = SessionLocal()
             try:
                 recent_entries = db.query(FoodEntry).filter(
                     FoodEntry.user_id == db_user.id
@@ -2411,10 +2411,10 @@ class WeeklyStatsScheduler:
         """Отправка еженедельной статистики всем активным пользователям"""
         logger.info("Начинаем отправку еженедельной статистики...")
         
-        db = DatabaseManager.SessionLocal()
+        from database import SessionLocal, User
+        db = SessionLocal()
         try:
             # Получаем всех активных пользователей
-            from database import User
             users = db.query(User).filter(User.is_active == True).all()
             
             for user in users:
