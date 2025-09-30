@@ -224,6 +224,24 @@ class RussianFoodDatabase:
         'гуляш': {'calories_per_100g': 180, 'typical_serving': 200, 'category': 'main'},
         'плов': {'calories_per_100g': 190, 'typical_serving': 250, 'category': 'main'},
         
+        # Стейки и говядина (усредненные значения)
+        'стейк говяжий': {'calories_per_100g': 220, 'typical_serving': 250, 'category': 'main'},
+        'стейк': {'calories_per_100g': 220, 'typical_serving': 250, 'category': 'main'},
+        'стейк рибай': {'calories_per_100g': 250, 'typical_serving': 250, 'category': 'main'},
+        'говядина': {'calories_per_100g': 187, 'typical_serving': 200, 'category': 'main'},
+        'говядина гриль': {'calories_per_100g': 195, 'typical_serving': 200, 'category': 'main'},
+        
+        # Курица
+        'курица': {'calories_per_100g': 165, 'typical_serving': 200, 'category': 'main'},
+        'курица гриль': {'calories_per_100g': 142, 'typical_serving': 200, 'category': 'main'},
+        'куриная грудка': {'calories_per_100g': 113, 'typical_serving': 150, 'category': 'main'},
+        'куриное филе': {'calories_per_100g': 113, 'typical_serving': 150, 'category': 'main'},
+        
+        # Свинина
+        'свинина': {'calories_per_100g': 242, 'typical_serving': 200, 'category': 'main'},
+        'свинина гриль': {'calories_per_100g': 250, 'typical_serving': 200, 'category': 'main'},
+        'свиная отбивная': {'calories_per_100g': 260, 'typical_serving': 150, 'category': 'main'},
+        
         # Дополнительные продукты
         'сок': {'calories_per_100g': 45, 'typical_serving': 250, 'category': 'drink'},
         'банановые чипсы': {'calories_per_100g': 519, 'typical_serving': 30, 'category': 'snack'},
@@ -286,6 +304,28 @@ class RussianFoodDatabase:
             'goulash': 'гуляш',
             'pilaf': 'плов',
             
+            # Стейки и говядина
+            'steak': 'стейк говяжий',
+            'beef steak': 'стейк говяжий',
+            'grilled beef steak': 'стейк говяжий',
+            'grilled steak': 'стейк говяжий',
+            'ribeye steak': 'стейк рибай',
+            'ribeye': 'стейк рибай',
+            'sirloin steak': 'стейк',
+            'beef': 'говядина',
+            'grilled beef': 'говядина',
+            
+            # Курица
+            'chicken': 'курица',
+            'grilled chicken': 'курица гриль',
+            'chicken breast': 'куриная грудка',
+            'chicken fillet': 'куриное филе',
+            
+            # Свинина
+            'pork': 'свинина',
+            'pork chop': 'свиная отбивная',
+            'grilled pork': 'свинина гриль',
+            
             # Супы
             'shchi': 'щи',
             'solyanka': 'солянка',
@@ -340,17 +380,25 @@ class RussianFoodDatabase:
         
         results = []
         for match, score in matches:
-            if score >= 60:  # Минимальный порог совпадения
+            if score >= 70:  # Повышен порог для лучшей точности
                 food_data = self.RUSSIAN_FOODS[match]
                 results.append({
                     'id': f'ru_{match}',
                     'name': match.title(),
-                    'source': 'russian_database',
+                    'source': 'russian',
                     'calories_per_100g': food_data['calories_per_100g'],
                     'typical_serving_g': food_data['typical_serving'],
                     'category': food_data['category'],
                     'match_score': score
                 })
+        
+        # Если ничего не нашли в русской базе, пробуем FatSecret
+        if not results:
+            logger.info(f"🔍 Не нашли '{query}' в русской базе, ищем в FatSecret...")
+            fatsecret = FatSecretAPI()
+            fatsecret_results = fatsecret.search_food(original_query)
+            if fatsecret_results:
+                return fatsecret_results
         
         return results
 
