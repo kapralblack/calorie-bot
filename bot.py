@@ -1911,17 +1911,21 @@ class CalorieBotHandlers:
             
             # Улучшенная клавиатура с действиями
             keyboard = [
-                # Первый ряд - основные действия
+                # Первый ряд - уточнение калорий
+                [
+                    InlineKeyboardButton("🔍 Уточнить калории", callback_data="refine_calories")
+                ],
+                # Второй ряд - основные действия
                 [
                     InlineKeyboardButton("📊 Посмотреть статистику", callback_data="stats"),
                     InlineKeyboardButton("👤 Мой профиль", callback_data="profile")
                 ],
-                # Второй ряд - редактирование и добавление
+                # Третий ряд - редактирование и добавление
                 [
                     InlineKeyboardButton("🔧 Исправить анализ", callback_data="correct_analysis"),
                     InlineKeyboardButton("➕ Добавить еще блюдо", callback_data="add_more")
                 ],
-                # Третий ряд - навигация
+                # Четвертый ряд - навигация
                 [
                     InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
                 ]
@@ -2132,6 +2136,20 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.settings_input_handler(update, context)
         elif query.data.startswith("goal_"):
             await CalorieBotHandlers.goal_selection_handler(update, context)
+        elif query.data == "refine_calories":
+            await CalorieBotHandlers.refine_calories_handler(update, context)
+        elif query.data.startswith("select_food_"):
+            await CalorieBotHandlers.select_food_from_fatsecret(update, context)
+        elif query.data.startswith("apply_food_"):
+            await CalorieBotHandlers.apply_fatsecret_choice(update, context)
+        elif query.data == "cancel_refine":
+            await query.answer("✅ Оставлены исходные данные")
+            await query.edit_message_text(
+                "✅ Калории остались без изменений",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+                ]])
+            )
         elif query.data == "correct_analysis":
             await CalorieBotHandlers.correction_handler(update, context)
         elif query.data == "cancel_correction":
@@ -2746,6 +2764,297 @@ class CalorieBotHandlers:
         
         await update.message.reply_text(
             message,
+            reply_markup=reply_markup
+        )
+    
+    @staticmethod
+    async def refine_calories_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик кнопки 'Уточнить калории' - показывает меню выбора продуктов"""
+        query = update.callback_query
+        await query.answer()
+        
+        # Получаем последний результат анализа
+        last_result = context.user_data.get('last_analysis_result')
+        
+        if not last_result or 'food_items' not in last_result:
+            await query.edit_message_text(
+                "❌ Не найден последний анализ. Отправьте фото еды заново.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+                ]])
+            )
+            return
+        
+        # Получаем список продуктов из анализа
+        food_items = last_result['food_items']
+        
+        if not food_items:
+            await query.edit_message_text(
+                "❌ Нет продуктов для уточнения.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")
+                ]])
+            )
+            return
+        
+        # Формируем сообщение со списком продуктов
+        message = "🔍 **Уточнение калорий**\n\n"
+        message += "Выберите продукт, для которого хотите уточнить калорийность:\n\n"
+        
+        keyboard = []
+        for idx, item in enumerate(food_items):
+            food_name = item.get('name', 'Неизвестный продукт')
+            weight = item.get('estimated_weight', '?')
+            calories = item.get('calories', 0)
+            
+            button_text = f"{food_name} ({weight}) - {calories} ккал"
+            callback_data = f"select_food_{idx}"
+            
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+        
+        # Добавляем кнопку отмены
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_refine")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    @staticmethod
+    async def select_food_from_fatsecret(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Поиск выбранного продукта в FatSecret и показ вариантов"""
+        query = update.callback_query
+        await query.answer("🔍 Ищу в базе FatSecret...")
+        
+        # Получаем индекс выбранного продукта
+        try:
+            food_idx = int(query.data.split('_')[-1])
+        except (ValueError, IndexError):
+            await query.edit_message_text("❌ Ошибка выбора продукта")
+            return
+        
+        # Получаем последний результат анализа
+        last_result = context.user_data.get('last_analysis_result')
+        if not last_result or 'food_items' not in last_result:
+            await query.edit_message_text("❌ Данные анализа не найдены")
+            return
+        
+        food_items = last_result['food_items']
+        if food_idx >= len(food_items):
+            await query.edit_message_text("❌ Продукт не найден")
+            return
+        
+        selected_food = food_items[food_idx]
+        food_name = selected_food.get('name', '')
+        ai_weight = selected_food.get('estimated_weight', '100g')
+        ai_calories = selected_food.get('calories', 0)
+        
+        # Извлекаем числовое значение веса
+        import re
+        weight_match = re.search(r'(\d+)', ai_weight)
+        weight_grams = int(weight_match.group(1)) if weight_match else 100
+        
+        # Ищем в FatSecret
+        from food_database import food_database
+        
+        # Переводим название на русский для поиска
+        from ai_analyzer import translate_food_name
+        russian_name = translate_food_name(food_name)
+        
+        # Поиск в базе данных
+        search_results = food_database.search_food(russian_name)
+        
+        if not search_results:
+            # Если не нашли, пробуем английское название
+            search_results = food_database.search_food(food_name)
+        
+        if not search_results:
+            message = f"❌ **Продукт не найден в базе FatSecret**\n\n"
+            message += f"**Продукт:** {food_name}\n"
+            message += f"**Вес (AI):** {ai_weight}\n"
+            message += f"**Калории (AI):** {ai_calories} ккал\n\n"
+            message += "💡 Попробуйте:\n"
+            message += "• Использовать AI данные\n"
+            message += "• Ввести название вручную\n"
+            message += "• Выбрать другой продукт"
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Назад к списку", callback_data="refine_calories")],
+                [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+            ]
+            
+            await query.edit_message_text(
+                message,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+        
+        # Показываем результаты поиска
+        message = f"🔍 **Результаты поиска для:** {food_name}\n\n"
+        message += f"**AI определил:** {ai_weight} = {ai_calories} ккал\n"
+        message += f"**Калорийность AI:** {ai_calories / weight_grams * 100:.0f} ккал/100г\n\n"
+        message += "📊 **Варианты из FatSecret:**\n\n"
+        
+        keyboard = []
+        
+        # Показываем топ-5 результатов
+        for idx, result in enumerate(search_results[:5]):
+            result_name = result.get('name', 'Неизвестно')
+            calories_per_100g = result.get('calories_per_100g', 0)
+            
+            # Рассчитываем калории для текущего веса
+            calculated_calories = (calories_per_100g * weight_grams) / 100
+            
+            source = result.get('source', 'unknown')
+            source_emoji = "🇷🇺" if source == 'russian' else "🌐"
+            
+            button_text = f"{source_emoji} {result_name} ({calories_per_100g:.0f} ккал/100г)"
+            message += f"{idx + 1}. **{result_name}**\n"
+            message += f"   • {calories_per_100g:.0f} ккал/100г\n"
+            message += f"   • Для {weight_grams}г = **{calculated_calories:.0f} ккал**\n\n"
+            
+            # Сохраняем данные для выбора
+            callback_data = f"apply_food_{food_idx}_{idx}"
+            keyboard.append([InlineKeyboardButton(
+                f"✅ Выбрать вариант {idx + 1}", 
+                callback_data=callback_data
+            )])
+        
+        # Кнопки навигации
+        keyboard.append([InlineKeyboardButton("🔙 Назад к списку", callback_data="refine_calories")])
+        keyboard.append([InlineKeyboardButton("❌ Оставить как есть", callback_data="cancel_refine")])
+        
+        # Сохраняем результаты поиска для последующего применения
+        context.user_data['fatsecret_results'] = {
+            'food_idx': food_idx,
+            'weight_grams': weight_grams,
+            'results': search_results[:5]
+        }
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=reply_markup
+        )
+    
+    @staticmethod
+    async def apply_fatsecret_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Применение выбранного варианта из FatSecret к последнему анализу"""
+        query = update.callback_query
+        await query.answer("✅ Применяю выбранный вариант...")
+        
+        user = query.from_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        
+        # Парсим callback_data: apply_food_{food_idx}_{result_idx}
+        try:
+            parts = query.data.split('_')
+            food_idx = int(parts[2])
+            result_idx = int(parts[3])
+        except (ValueError, IndexError):
+            await query.edit_message_text("❌ Ошибка при применении данных")
+            return
+        
+        # Получаем сохраненные результаты поиска
+        fatsecret_data = context.user_data.get('fatsecret_results')
+        if not fatsecret_data:
+            await query.edit_message_text("❌ Данные поиска не найдены")
+            return
+        
+        # Получаем выбранный результат
+        selected_result = fatsecret_data['results'][result_idx]
+        weight_grams = fatsecret_data['weight_grams']
+        
+        result_name = selected_result.get('name', 'Неизвестно')
+        calories_per_100g = selected_result.get('calories_per_100g', 0)
+        new_calories = (calories_per_100g * weight_grams) / 100
+        
+        # Получаем последний анализ и обновляем его
+        last_result = context.user_data.get('last_analysis_result')
+        if not last_result:
+            await query.edit_message_text("❌ Данные анализа не найдены")
+            return
+        
+        # Обновляем выбранный продукт
+        old_calories = last_result['food_items'][food_idx]['calories']
+        last_result['food_items'][food_idx]['calories'] = int(new_calories)
+        last_result['food_items'][food_idx]['fatsecret_match'] = result_name
+        
+        # Пересчитываем общие калории
+        total_diff = new_calories - old_calories
+        last_result['total_calories'] = last_result.get('total_calories', 0) + total_diff
+        
+        # Сохраняем обновленный результат
+        context.user_data['last_analysis_result'] = last_result
+        
+        # Обновляем запись в базе данных (последнюю запись пользователя)
+        try:
+            from database import SessionLocal, FoodEntry
+            db = SessionLocal()
+            try:
+                # Находим последнюю запись пользователя
+                last_entry = db.query(FoodEntry).filter(
+                    FoodEntry.user_id == db_user.id
+                ).order_by(FoodEntry.created_at.desc()).first()
+                
+                if last_entry:
+                    # Обновляем данные записи
+                    last_entry.food_items = json.dumps(last_result['food_items'], ensure_ascii=False)
+                    last_entry.total_calories = last_result['total_calories']
+                    db.commit()
+                    
+                    # Обновляем дневную статистику
+                    user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
+                    from database import get_user_timezone
+                    user_tz = get_user_timezone(user_timezone)
+                    entry_date = last_entry.created_at.astimezone(user_tz).date()
+                    DatabaseManager._update_daily_stats(db_user.id, entry_date, user_timezone)
+                    
+                    logger.info(f"✅ Обновлена запись #{last_entry.id}: {old_calories:.0f} → {new_calories:.0f} ккал")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении БД: {e}")
+        
+        # Получаем обновленную статистику
+        user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
+        today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
+        daily_goal = db_user.daily_calorie_goal
+        
+        # Формируем сообщение об успехе
+        message = f"✅ **Калории уточнены!**\n\n"
+        message += f"📝 **Продукт:** {last_result['food_items'][food_idx]['name']}\n"
+        message += f"⚖️ **Вес:** {weight_grams}г\n\n"
+        message += f"**Изменения:**\n"
+        message += f"• Было: {old_calories:.0f} ккал (AI)\n"
+        message += f"• Стало: {new_calories:.0f} ккал ({result_name})\n"
+        message += f"• Разница: {total_diff:+.0f} ккал\n\n"
+        message += f"📊 **Обновленная статистика:**\n"
+        message += f"• Сегодня: {today_calories:.0f} из {daily_goal} ккал\n"
+        
+        remaining = daily_goal - today_calories
+        if remaining > 0:
+            message += f"• Осталось: {remaining:.0f} ккал ✅"
+        else:
+            message += f"• Превышение: +{abs(remaining):.0f} ккал ⚠️"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔍 Уточнить другой продукт", callback_data="refine_calories")],
+            [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
+            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
             reply_markup=reply_markup
         )
 
