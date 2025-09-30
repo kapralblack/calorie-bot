@@ -42,10 +42,11 @@ class CalorieBotHandlers:
             ],
             [
                 KeyboardButton("🎯 Мои цели"),
-                KeyboardButton("❓ Помощь")
+                KeyboardButton("❌ Отменить анализ")
             ],
             [
-                KeyboardButton("🏠 Главное меню")
+                KeyboardButton("🏠 Главное меню"),
+                KeyboardButton("❓ Помощь")
             ]
         ]
         return ReplyKeyboardMarkup(
@@ -76,8 +77,9 @@ class CalorieBotHandlers:
             return
         
         # Если онбординг завершен, показываем обычное меню
-        # Получаем быструю статистику для приветствия
-        today_calories = DatabaseManager.get_today_calories(telegram_user.id)
+        # Получаем быструю статистику для приветствия с учетом таймзоны
+        user_timezone = getattr(telegram_user, 'timezone', 'UTC') or 'UTC'
+        today_calories = DatabaseManager.get_today_calories(telegram_user.id, user_timezone)
         daily_goal = telegram_user.daily_calorie_goal
         
         # Статус дня
@@ -176,9 +178,10 @@ class CalorieBotHandlers:
             # Получаем пользователя
             db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
             
-            # Получаем статистику
+            # Получаем статистику с учетом таймзоны
+            user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
             tracking_days = DatabaseManager.get_tracking_days(db_user.id)
-            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
             
             message = f"""
 🔍 **Диагностика пользователя**
@@ -979,7 +982,8 @@ class CalorieBotHandlers:
         
         try:
             db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
-            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
+            today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
             daily_goal = db_user.daily_calorie_goal
             
             # Расчет прогресса
@@ -1042,9 +1046,10 @@ class CalorieBotHandlers:
             persistent = "✅ Данные сохраняются между перезапусками" if db_type == "PostgreSQL" else \
                         "⚠️ Данные могут сбрасываться при обновлениях бота"
             
-            # Статистика пользователя
+            # Статистика пользователя с учетом таймзоны
+            user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
             tracking_days = DatabaseManager.get_tracking_days(db_user.id)
-            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
             
             # Дата создания аккаунта
             created_date = db_user.created_at.strftime('%d.%m.%Y') if db_user.created_at else "Неизвестно"
@@ -1497,6 +1502,11 @@ class CalorieBotHandlers:
                 bmi_emoji = "🔺"
             
             gender_text = "мужской" if gender == 'male' else "женский"
+            activity_text = {
+                'low': 'Низкая',
+                'moderate': 'Умеренная',
+                'high': 'Высокая'
+            }.get(activity_level, 'Умеренная')
             
             success_message = f"""
 🎉 **Профиль успешно настроен!**
@@ -1662,6 +1672,87 @@ class CalorieBotHandlers:
             db.close()
     
     @staticmethod
+    async def migrate_timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для миграции поля timezone в базу данных"""
+        user = update.effective_user
+        
+        # Проверяем, что это админ
+        if user.id != 247485745:  # Замените на ваш Telegram ID
+            await update.message.reply_text("❌ У вас нет прав для выполнения этой команды")
+            return
+        
+        try:
+            # Подключаемся к базе данных
+            from database import SessionLocal
+            db = SessionLocal()
+            
+            # Выполняем миграцию
+            from sqlalchemy import text
+            db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) DEFAULT 'UTC'"))
+            db.commit()
+            
+            await update.message.reply_text("✅ Поле timezone успешно добавлено в базу данных!")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка при миграции: {str(e)}")
+        finally:
+            db.close()
+    
+    @staticmethod
+    async def undo_last_entry_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик отмены последнего анализа калорий"""
+        user = update.effective_user
+        db_user = DatabaseManager.get_or_create_user(telegram_id=user.id)
+        user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
+        
+        # Удаляем последнюю запись
+        deleted_entry = DatabaseManager.delete_last_food_entry(db_user.id, user_timezone)
+        
+        if deleted_entry:
+            # Получаем обновленную статистику
+            today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
+            daily_goal = db_user.daily_calorie_goal
+            
+            # Форматируем время записи
+            try:
+                import json
+                food_data = json.loads(deleted_entry['food_items'])
+                food_name = food_data[0]['name'] if isinstance(food_data, list) and len(food_data) > 0 and 'name' in food_data[0] else "Блюдо"
+            except:
+                food_name = "Блюдо"
+            
+            entry_time = deleted_entry['created_at'].strftime("%d.%m %H:%M")
+            
+            message = f"""
+✅ **Последний анализ отменен!**
+
+❌ **Удалено:**
+• {food_name}
+• {deleted_entry['calories']:.0f} ккал
+• Время: {entry_time}
+
+📊 **Обновленная статистика за сегодня:**
+• Съедено: {today_calories:.0f} из {daily_goal} ккал
+• Осталось: {daily_goal - today_calories:.0f} ккал
+
+💡 *Совет:* Если вы хотите исправить данные, отправьте новое фото еды.
+"""
+        else:
+            message = """
+ℹ️ **Нет записей для отмены**
+
+У вас нет сохраненных анализов еды, которые можно было бы удалить.
+
+💡 Отправьте фото вашей еды, чтобы начать отслеживание калорий!
+"""
+        
+        await update.message.reply_text(
+            message,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=CalorieBotHandlers.get_main_keyboard()
+        )
+    
+    @staticmethod
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
         help_message = f"""
@@ -1779,7 +1870,8 @@ class CalorieBotHandlers:
                 )
                 return
             
-            # Сохраняем результат в базу данных
+            # Сохраняем результат в базу данных с учетом таймзоны пользователя
+            user_timezone = getattr(db_user, 'timezone', 'UTC') or 'UTC'
             if result.get('total_calories', 0) > 0:
                 DatabaseManager.add_food_entry(
                     user_id=db_user.id,
@@ -1789,15 +1881,15 @@ class CalorieBotHandlers:
                     total_carbs=result.get('total_carbs', 0),
                     total_fats=result.get('total_fats', 0),
                     confidence=result.get('confidence', 0),
-                    photo_id=photo.file_id
+                    photo_id=photo.file_id,
+                    user_timezone=user_timezone
                 )
             
             # Форматируем результат
             formatted_result = analyzer.format_analysis_result(result)
             
-            # Добавляем информацию о дневном прогрессе
-            # ИСПРАВЛЕНИЕ: получаем калории ПОСЛЕ сохранения в БД
-            today_calories = DatabaseManager.get_today_calories(db_user.id)
+            # Добавляем информацию о дневном прогрессе с учетом таймзоны
+            today_calories = DatabaseManager.get_today_calories(db_user.id, user_timezone)
             daily_goal = db_user.daily_calorie_goal
             remaining = daily_goal - today_calories
             
@@ -2434,6 +2526,8 @@ class CalorieBotHandlers:
             await CalorieBotHandlers.history_command(update, context)
         elif text == "🎯 Мои цели":
             await CalorieBotHandlers.goals_command(update, context)
+        elif text == "❌ Отменить анализ":
+            await CalorieBotHandlers.undo_last_entry_handler(update, context)
         elif text == "❓ Помощь":
             await CalorieBotHandlers.help_command(update, context)
         elif text == "🏠 Главное меню":
@@ -3014,6 +3108,7 @@ def main():
     application.add_handler(CommandHandler("adminexport", CalorieBotHandlers.admin_export_command))
     application.add_handler(CommandHandler("admintest", CalorieBotHandlers.admin_test_command))
     application.add_handler(CommandHandler("migrate_goals", CalorieBotHandlers.migrate_goals_command))
+    application.add_handler(CommandHandler("migrate_timezone", CalorieBotHandlers.migrate_timezone_command))
     application.add_handler(CommandHandler("forcemigration", CalorieBotHandlers.force_migration_command))
     application.add_handler(CommandHandler("debugmigration", CalorieBotHandlers.debug_migration_command))
     application.add_handler(CommandHandler("admindebug", CalorieBotHandlers.admin_debug_command))

@@ -5,6 +5,7 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, F
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timezone, timedelta
+import pytz
 import config
 
 Base = declarative_base()
@@ -29,6 +30,7 @@ class User(Base):
     gender = Column(String(10))  # male/female
     activity_level = Column(String(20), default='moderate')  # low/moderate/high
     weight_goal = Column(String(20), default='maintain')  # lose/maintain/gain
+    timezone = Column(String(50), default='UTC')  # Часовой пояс пользователя (напр. 'Europe/Moscow')
     # onboarding_completed = Column(Boolean, default=False)  # Временно отключено для совместимости
     
     # Связи
@@ -126,6 +128,40 @@ engine = create_engine(config.DATABASE_URL, echo=False)
 
 # Создание сессии
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С ТАЙМЗОНАМИ ==========
+
+def get_user_timezone(user_timezone_str: str):
+    """Получить объект timezone из строки"""
+    try:
+        return pytz.timezone(user_timezone_str)
+    except:
+        return pytz.UTC
+
+def get_user_now(user_timezone_str: str = 'UTC'):
+    """Получить текущее время пользователя с учетом его часового пояса"""
+    user_tz = get_user_timezone(user_timezone_str)
+    return datetime.now(pytz.UTC).astimezone(user_tz)
+
+def get_user_today_date(user_timezone_str: str = 'UTC'):
+    """Получить сегодняшнюю дату пользователя (в его часовом поясе)"""
+    return get_user_now(user_timezone_str).date()
+
+def get_user_day_start(date, user_timezone_str: str = 'UTC'):
+    """Получить начало дня пользователя в UTC (для запросов к БД)"""
+    user_tz = get_user_timezone(user_timezone_str)
+    # Создаем datetime для начала дня в таймзоне пользователя
+    day_start = user_tz.localize(datetime.combine(date, datetime.min.time()))
+    # Конвертируем в UTC для хранения в БД
+    return day_start.astimezone(pytz.UTC)
+
+def get_user_day_end(date, user_timezone_str: str = 'UTC'):
+    """Получить конец дня пользователя в UTC (для запросов к БД)"""
+    user_tz = get_user_timezone(user_timezone_str)
+    # Создаем datetime для конца дня в таймзоне пользователя
+    day_end = user_tz.localize(datetime.combine(date, datetime.max.time()))
+    # Конвертируем в UTC для хранения в БД
+    return day_end.astimezone(pytz.UTC)
 
 def migrate_telegram_id_if_needed():
     """Автоматическая миграция telegram_id с INTEGER на BIGINT если необходимо"""
@@ -312,6 +348,7 @@ class DatabaseManager:
                         self.gender = None
                         self.activity_level = 'moderate'
                         self.weight_goal = 'maintain'
+                        self.timezone = 'UTC'
                     
                     def calculate_daily_calorie_goal(self):
                         """Рассчитывает дневную норму калорий с учетом цели по весу"""
@@ -362,6 +399,7 @@ class DatabaseManager:
                     self.gender = None
                     self.activity_level = 'moderate'
                     self.weight_goal = 'maintain'
+                    self.timezone = 'UTC'
                 
                 def calculate_daily_calorie_goal(self):
                     """Рассчитывает дневную норму калорий с учетом цели по весу"""
@@ -400,8 +438,8 @@ class DatabaseManager:
     
     @staticmethod
     def add_food_entry(user_id, food_data, total_calories, total_proteins=0, total_carbs=0, total_fats=0, 
-                      confidence=0, meal_type=None, photo_id=None):
-        """Добавить запись о еде"""
+                      confidence=0, meal_type=None, photo_id=None, user_timezone='UTC'):
+        """Добавить запись о еде с учетом часового пояса пользователя"""
         db = SessionLocal()
         try:
             entry = FoodEntry(
@@ -419,26 +457,27 @@ class DatabaseManager:
             db.commit()
             db.refresh(entry)
             
-            # Обновляем дневную статистику
-            DatabaseManager._update_daily_stats(user_id, entry.created_at.date())
+            # Обновляем дневную статистику с учетом таймзоны пользователя
+            user_date = get_user_today_date(user_timezone)
+            DatabaseManager._update_daily_stats(user_id, user_date, user_timezone)
             
             return entry
         finally:
             db.close()
     
     @staticmethod
-    def _update_daily_stats(user_id, date):
-        """Обновить дневную статистику"""
+    def _update_daily_stats(user_id, date, user_timezone='UTC'):
+        """Обновить дневную статистику с учетом часового пояса пользователя"""
         db = SessionLocal()
         try:
-            # ИСПРАВЛЕНИЕ: Получаем все записи за день с учетом UTC времени
-            start_of_day = datetime.combine(date, datetime.min.time()).replace(tzinfo=timezone.utc)
-            end_of_day = datetime.combine(date, datetime.max.time()).replace(tzinfo=timezone.utc)
+            # Получаем границы дня с учетом часового пояса пользователя
+            start_of_day = get_user_day_start(date, user_timezone)
+            end_of_day = get_user_day_end(date, user_timezone)
             
             entries = db.query(FoodEntry).filter(
                 FoodEntry.user_id == user_id,
                 FoodEntry.created_at >= start_of_day,
-                FoodEntry.created_at < end_of_day
+                FoodEntry.created_at <= end_of_day
             ).all()
             
             # Считаем суммы
@@ -504,14 +543,14 @@ class DatabaseManager:
             db.close()
     
     @staticmethod
-    def get_today_calories(user_id):
-        """Получить калории за сегодня - с прямым подсчетом из записей еды"""
+    def get_today_calories(user_id, user_timezone='UTC'):
+        """Получить калории за сегодня с учетом часового пояса пользователя"""
         db = SessionLocal()
         try:
-            # ИСПРАВЛЕНИЕ: Используем точные границы дня в UTC
-            today = datetime.now(timezone.utc).date()
-            start_of_day = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
-            end_of_day = datetime.combine(today, datetime.max.time()).replace(tzinfo=timezone.utc)
+            # Получаем сегодняшнюю дату в часовом поясе пользователя
+            today = get_user_today_date(user_timezone)
+            start_of_day = get_user_day_start(today, user_timezone)
+            end_of_day = get_user_day_end(today, user_timezone)
             
             today_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
                 FoodEntry.user_id == user_id,
@@ -525,7 +564,7 @@ class DatabaseManager:
     
     @staticmethod
     def update_user_settings(user_id, daily_calorie_goal=None, weight=None, height=None, 
-                           age=None, gender=None, activity_level=None, weight_goal=None):
+                           age=None, gender=None, activity_level=None, weight_goal=None, timezone_str=None):
         """Обновить настройки пользователя"""
         db = SessionLocal()
         try:
@@ -547,6 +586,8 @@ class DatabaseManager:
                     user.activity_level = activity_level
                 if weight_goal is not None:
                     user.weight_goal = weight_goal
+                if timezone_str is not None:
+                    user.timezone = timezone_str
                 
                 db.commit()
                 db.refresh(user)
@@ -608,15 +649,19 @@ class DatabaseManager:
         return False
 
     @staticmethod
-    def get_user_info(user_id: int) -> dict:
-        """Получить расширенную информацию о пользователе"""
+    def get_user_info(user_id: int, user_timezone: str = 'UTC') -> dict:
+        """Получить расширенную информацию о пользователе с учетом часового пояса"""
         db = SessionLocal()
         try:
-            # Сегодняшние калории
-            today = datetime.now(timezone.utc).date()
+            # Сегодняшние калории с учетом таймзоны
+            today = get_user_today_date(user_timezone)
+            start_of_day = get_user_day_start(today, user_timezone)
+            end_of_day = get_user_day_end(today, user_timezone)
+            
             today_calories = db.query(func.sum(FoodEntry.total_calories)).filter(
                 FoodEntry.user_id == user_id,
-                func.date(FoodEntry.created_at) == today
+                FoodEntry.created_at >= start_of_day,
+                FoodEntry.created_at <= end_of_day
             ).scalar() or 0
             
             # Средние за неделю
@@ -658,6 +703,53 @@ class DatabaseManager:
             ).filter(FoodEntry.user_id == user_id).scalar()
             
             return days_count or 0
+        finally:
+            db.close()
+    
+    @staticmethod
+    def delete_last_food_entry(user_id: int, user_timezone: str = 'UTC'):
+        """Удалить последнюю запись о еде пользователя"""
+        import logging
+        logger = logging.getLogger(__name__)
+        db = SessionLocal()
+        
+        try:
+            # Находим последнюю запись
+            last_entry = db.query(FoodEntry).filter(
+                FoodEntry.user_id == user_id
+            ).order_by(FoodEntry.created_at.desc()).first()
+            
+            if not last_entry:
+                logger.warning(f"⚠️ Не найдено записей для удаления у пользователя {user_id}")
+                return None
+            
+            # Сохраняем информацию о записи для возврата
+            entry_info = {
+                'calories': last_entry.total_calories,
+                'food_items': last_entry.food_items,
+                'created_at': last_entry.created_at,
+                'id': last_entry.id
+            }
+            
+            # Получаем дату записи в таймзоне пользователя для обновления статистики
+            user_tz = get_user_timezone(user_timezone)
+            entry_date = last_entry.created_at.astimezone(user_tz).date()
+            
+            # Удаляем запись
+            db.delete(last_entry)
+            db.commit()
+            
+            logger.info(f"✅ Удалена запись #{entry_info['id']} ({entry_info['calories']} ккал) для пользователя {user_id}")
+            
+            # Обновляем дневную статистику
+            DatabaseManager._update_daily_stats(user_id, entry_date, user_timezone)
+            
+            return entry_info
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка при удалении записи: {e}")
+            db.rollback()
+            return None
         finally:
             db.close()
 
@@ -878,7 +970,7 @@ class DatabaseManager:
             db.close()
     
     @staticmethod
-    def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str, weight_goal: str = 'maintain'):
+    def complete_onboarding(telegram_id: int, weight: float, height: float, age: int, gender: str, activity_level: str, weight_goal: str = 'maintain', timezone_str: str = 'UTC'):
         """Завершить онбординг пользователя и рассчитать персональную норму калорий"""
         import logging
         logger = logging.getLogger(__name__)
@@ -957,7 +1049,8 @@ class DatabaseManager:
                 user.gender = str(gender).lower()
                 user.activity_level = str(activity_level)
                 user.weight_goal = str(weight_goal).lower()
-                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}, weight_goal={user.weight_goal}")
+                user.timezone = str(timezone_str)
+                logger.info(f"✅ Данные УСПЕШНО установлены: weight={user.weight}, height={user.height}, age={user.age}, gender={user.gender}, activity_level={user.activity_level}, weight_goal={user.weight_goal}, timezone={user.timezone}")
             except Exception as set_error:
                 logger.error(f"❌ ОШИБКА при установке данных: {set_error}")
                 raise set_error
